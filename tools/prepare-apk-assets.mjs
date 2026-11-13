@@ -45,12 +45,14 @@ function rebrand(html) {
  */
 const DIAG_SCRIPT = `<script>/* __YUNYUE_BOOT_DIAG__ */
 (function () {
+  var painted = false;
   function splashTextNode() {
     return document.querySelector('#app-splash-screen .splash-status-text');
   }
   function paint(msg, color) {
     var el = splashTextNode();
     if (!el) { return; }
+    painted = true;
     el.textContent = msg;
     if (color) { el.style.color = color; }
     el.style.wordBreak = 'break-all';
@@ -78,13 +80,25 @@ const DIAG_SCRIPT = `<script>/* __YUNYUE_BOOT_DIAG__ */
     paint('初始化失败：' + String(detail).slice(0, 400), '#c62828');
   });
   document.addEventListener('DOMContentLoaded', function () {
+    // 2 秒自检：依赖脚本没加载出来时，主脚本会在顶层就抛错，页面看起来就是「卡住」
+    setTimeout(function () {
+      var splash = document.getElementById('app-splash-screen');
+      if (!splash || splash.classList.contains('fade-out')) { return; }
+      var miss = [];
+      if (typeof Dexie === 'undefined') { miss.push('Dexie(vendor/dexie.min.js)'); }
+      if (typeof window.markdownit === 'undefined') { miss.push('markdown-it(vendor/markdown-it.min.js)'); }
+      if (!window.indexedDB) { miss.push('IndexedDB'); }
+      if (miss.length) {
+        paint('依赖没加载出来：' + miss.join('、') + ' | ' + env(), '#c62828');
+      }
+    }, 2000);
     setTimeout(function () {
       var splash = document.getElementById('app-splash-screen');
       if (!splash || splash.classList.contains('fade-out')) { return; }
       var btn = document.getElementById('splash-skip-btn');
       if (btn) { btn.style.display = 'block'; }
       var el = splashTextNode();
-      if (el && el.textContent.indexOf('出错') === -1 && el.textContent.indexOf('失败') === -1) {
+      if (el && !painted) {
         paint('初始化卡住了（8 秒未完成），点下面按钮可先进入 | ' + env(), '#c62828');
       }
     }, 8000);
