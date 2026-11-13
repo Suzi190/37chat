@@ -132,14 +132,13 @@ public class MainActivity extends Activity {
                 topInsetPx = top;
                 pushSafeAreaToPage();
             }
-            applyImeInset(view, insets);
+            syncImeToPage(insets);
             return insets;
         });
 
-        // Android 11+ 的软键盘是「滑上来」的，onApplyWindowInsets 只在动画结束时给最终高度，
-        // WebView 就会一步缩到位、输入框瞬间弹上去，跟键盘完全不在一个节奏上。
-        // 这里挂上输入法动画回调，逐帧把键盘高度同步给 padding，页面高度跟键盘一起升，
-        // 收键盘时同理一起降，才有跟手的顺滑感。
+        // Android 11+ 的软键盘是「滑上来」的，onApplyWindowInsets 只在动画结束时给最终高度。
+        // 这里挂上输入法动画回调，逐帧把键盘高度写进页面的 --kb，
+        // 页面的输入栏就会跟键盘一起升、一起降，节奏完全一致。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             root.setWindowInsetsAnimationCallback(new WindowInsetsAnimation.Callback(
                     WindowInsetsAnimation.Callback.DISPATCH_MODE_STOP) {
@@ -148,7 +147,7 @@ public class MainActivity extends Activity {
                                                List<WindowInsetsAnimation> runningAnimations) {
                     for (WindowInsetsAnimation animation : runningAnimations) {
                         if ((animation.getTypeMask() & WindowInsets.Type.ime()) != 0) {
-                            applyImeInset(root, insets);
+                            syncImeToPage(insets);
                             break;
                         }
                     }
@@ -169,6 +168,7 @@ public class MainActivity extends Activity {
 
     /** 建一个配置好的 WebView；渲染进程崩溃后也用它重建 */
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    @SuppressWarnings("deprecation")
     private WebView buildWebView() {
         WebView view = new WebView(this);
         // 需要连电脑调试网页时可以打开 chrome://inspect
@@ -182,19 +182,22 @@ public class MainActivity extends Activity {
         view.addJavascriptInterface(new Bridge(), "AndroidBridge");
         view.setWebViewClient(new AppWebViewClient());
         view.setWebChromeClient(new AppChromeClient());
-        // 键盘高度只由 Activity 这一层的 root 底部 padding 决定（见 applyImeInset）。
-        // 但 WindowInsets 还会继续往子 View 派发，WebView 内部的 Chromium 收到 ime inset 后
-        // 会按「键盘占了多高」自己去缩可视区，还会把聚焦的输入框滚进可视区；
-        // 和外面逐帧变化的 padding 一叠加，页面就被两套逻辑来回拉扯 ——
-        // 输入框、壁纸上下乱跳就是这么来的。这里把 ime 这一项对 WebView 藏起来。
+        // 输入栏的位置完全由我们自己传给页面的 --kb 决定（见 syncImeToPage），
+        // 所以 WebView 这边的 ime inset 必须彻底藏掉：否则 Chromium 拿到「键盘占了多高」
+        // 会按它再缩一次可视区、把聚焦的输入框滚进可视区，和页面的位移一叠加就是双重位移。
         view.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 return new WindowInsets.Builder(insets)
                         .setInsets(WindowInsets.Type.ime(), Insets.NONE)
                         .build();
             }
-            // Android 10 及更早没有 insets 动画，键盘一次性弹出，保持原行为最稳
-            return insets;
+            // API 30 之前没有 ime 类型，只能把底部这一项抹掉；
+            // 页面顶部的安全区用的是我们注入的 --android-inset-top，不依赖 WebView 的 insets
+            return insets.replaceSystemWindowInsets(
+                    insets.getSystemWindowInsetLeft(),
+                    insets.getSystemWindowInsetTop(),
+                    insets.getSystemWindowInsetRight(),
+                    0);
         });
         view.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
             if (url == null || url.startsWith("blob:")) {
@@ -288,22 +291,43 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 软键盘：壳子用的是 setDecorFitsSystemWindows(false)（全屏铺到挖孔/导航栏底下），
-     * 系统和 WebView 都不会替我们缩小窗口，manifest 里的 adjustResize 等于没生效，
-     * 键盘一弹就把底部输入框整块盖住。
-     * 这里手动把输入法高度做成 root 的底部内边距：
-     * WebView 真的变矮 → 视口跟着变矮 → 页面（html.android-shell .app-container 用的是 100%）
-     * 在同一次布局里就跟上了，输入框自然停在键盘上方。键盘收起时 padding 归零。
+     * 软键盘：这里刻意「一点不去动 WebView 的尺寸」。
+     *
+     * 之前的做法是逐帧给 root 加底部 padding，让 WebView 真的变矮、页面跟着 resize。
+     * 但 WebView 的尺寸变化走的是 Chromium 的 view resize 通道，它会节流连续的 resize：
+     * 动画中间的尺寸经常被直接丢掉，页面隔几帧才更新一次 —— 表现出来就是
+     * 「几帧纹丝不动，然后猛跳一下」，比不做处理还难受。
+     * 而且视口一变，容器高度、壁纸、所有 vh 的东西全部要重算，整页都在抖。
+     *
+     * 现在只把键盘高度（dp）写进页面的 --kb 变量，由页面内部把聊天区顶上去：
+     * 页面内的 flex 布局是每帧同步算完的，不走 resize 节流；盒子尺寸不变，
+     * 所以壁纸完全不动，只有消息列表和输入栏在按键盘的节奏滑动。
      */
-    private void applyImeInset(View root, WindowInsets insets) {
+    private void syncImeToPage(WindowInsets insets) {
         int ime = imeBottomOf(insets);
         if (ime == imeBottomPx) {
             return;
         }
         imeBottomPx = ime;
-        if (root != null) {
-            root.setPadding(0, 0, 0, ime);
+        pushKeyboardInsetToPage();
+    }
+
+    /** 把当前键盘高度换算成 dp（= 页面里的 CSS px）告诉页面 */
+    private void pushKeyboardInsetToPage() {
+        WebView view = webView;
+        if (view == null) {
+            return;
         }
+        String dp = String.format(Locale.US, "%.2f", imeBottomPx / density());
+        view.evaluateJavascript(
+                "(function(){try{if(window.__appKeyboardInset){window.__appKeyboardInset(" + dp
+                        + ");}}catch(e){}})();",
+                null);
+    }
+
+    private float density() {
+        float density = getResources().getDisplayMetrics().density;
+        return density > 0f ? density : 1f;
     }
 
     /** 取输入法高度；API 30 之前没有 ime() 类型，只能拿 systemWindowInsetBottom 兜底 */
@@ -334,14 +358,15 @@ public class MainActivity extends Activity {
         if (view == null) {
             return;
         }
-        float density = getResources().getDisplayMetrics().density;
-        if (density <= 0f) {
-            density = 1f;
-        }
-        String dp = String.format(Locale.US, "%.2f", topInsetPx / density);
+        float d = density();
+        String dp = String.format(Locale.US, "%.2f", topInsetPx / d);
+        // 键盘高度也一起补一次：页面重新加载后 --kb 会回到 0，这里把它恢复成当前真实值，
+        // 免得「键盘还开着、输入栏被压在键盘后面」。
+        String kb = String.format(Locale.US, "%.2f", imeBottomPx / d);
         String js = "(function(){try{var r=document.documentElement;"
                 + "r.classList.add('android-shell');"
                 + "r.style.setProperty('--android-inset-top','" + dp + "px');"
+                + "if(window.__appKeyboardInset){window.__appKeyboardInset(" + kb + ");}"
                 + "}catch(e){}})();";
         view.evaluateJavascript(js, null);
     }

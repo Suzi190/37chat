@@ -102,11 +102,31 @@
         }
 
         /* App 壳里：容器高度直接用 100% 绑视口（html / body 本来就是 100%）。
-           键盘弹出时 Java 会逐帧把 WebView 抬起，这个百分比和视口在同一次布局里算好，
-           不会出现「容器比视口慢一两帧」。之前用 JS 写 --app-height，
-           变量要等 resize → rAF 才更新，键盘动画期间两套高度互相追，输入框和壁纸才会上下抖。 */
+           键盘弹出时 Java 不会改 WebView 的尺寸，所以这条只是兜底，正常不会有变化。 */
         html.android-shell .app-container {
             height: 100%;
+        }
+
+        /* —— 键盘 ——
+           WebView 的尺寸在整个键盘动画里一点都没变（见 MainActivity.syncImeToPage），
+           Java 只是把键盘高度（dp）逐帧写进 --kb。页面内部据此把聊天区顶上去：
+           .chat-main-area 只加 padding-bottom，盒子尺寸不变，页面内的 flex 布局
+           每帧同步就能算完，不走 Chromium 的 resize 节流 —— 也就是不会出现
+           「憋几帧不动、然后猛跳一下」那种乱跳。消息列表和输入栏一起被压上来，
+           壁纸是画在 .chat-main-area 上的，背景按 border-box 铺，
+           padding 怎么变都牵不动它，所以壁纸纹丝不动。 */
+        html.android-shell {
+            --kb: 0px;
+        }
+
+        html.android-shell .chat-main-area {
+            padding-bottom: var(--kb, 0px);
+            background-origin: border-box;
+        }
+
+        /* 「更多功能」面板绝对定位在页面底部，同样要抬到键盘上方 */
+        html.android-shell #chat-actions-panel {
+            bottom: var(--kb, 0px);
         }
 
         .status-bar {
@@ -14146,11 +14166,9 @@
     <script>
 
         // —— 页面高度 ——
-        // App 壳里（能拿到 AndroidBridge）完全不跑 JS 高度计算：
-        // CSS 的 100%（见 html.android-shell .app-container）直接跟着视口走，
-        // 键盘逐帧抬起 WebView 时，它在同一帧里就算好了，不会「容器比视口慢一拍」。
-        // 之前在壳里用 --app-height，变量要等 resize → rAF，键盘动画期间容器高度一直追不上视口，
-        // 表现就是输入框和壁纸上下乱跳 —— 所以壳里必须交给 CSS。
+        // App 壳里（能拿到 AndroidBridge）完全不跑 JS 高度计算：键盘动画期间 WebView 的
+        // 尺寸本来就不变（见 MainActivity.syncImeToPage），高度全交给 CSS 的 100%（见
+        // html.android-shell .app-container），这里只负责让消息区继续贴底。
         // 普通浏览器（没有壳）才用 JS 算可视高度，避免手机浏览器地址栏抽动把底部挡住。
         const inAppShell = typeof window.AndroidBridge !== 'undefined';
         if (inAppShell) {
@@ -14169,6 +14187,19 @@
             }
         };
         let appHeightFrame = 0;
+        // —— 键盘 ——
+        // Java 逐帧把键盘高度（dp，1 CSS px = 1 dp）写进 --kb，页面只改这一个变量，
+        // 由 CSS 把 .chat-main-area 的 padding-bottom 撑出来，消息列表和输入栏自己就上去了。
+        // 全程不动 WebView 尺寸，所以不会触发 Chromium 的 resize 节流，也不会牵动壁纸。
+        window.__appKeyboardInset = function (dp) {
+            const doc = document.documentElement;
+            const px = Math.max(0, Number(dp) || 0);
+            const next = px > 0.5 ? px.toFixed(2) + 'px' : '0px';
+            if (doc.style.getPropertyValue('--kb') === next) return;
+            doc.style.setProperty('--kb', next);
+            // 消息区被压矮之后，原来贴着底的那一条要重新贴到底，不然会看起来「往上跳」
+            keepChatScrollAtBottom();
+        };
         const applyAppHeight = () => {
             // 每次都以「现在有没有 android-shell 类」为准，而不是启动时判一次：
             // 类由 Java 在 onPageFinished 补上，补上之后这里就只负责聊天区贴底，
