@@ -719,6 +719,8 @@ public class MainActivity extends Activity {
             // 记完再把控制权交回系统：该退出还是退出，但下次启动能看到原因
             if (previousCrashHandler != null) {
                 previousCrashHandler.uncaughtException(thread, error);
+            } else {
+                android.os.Process.killProcess(android.os.Process.myPid());
             }
         });
     }
