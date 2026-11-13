@@ -17,6 +17,7 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
+import android.view.WindowInsetsAnimation;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
@@ -134,6 +135,27 @@ public class MainActivity extends Activity {
             applyImeInset(view, insets);
             return insets;
         });
+
+        // Android 11+ 的软键盘是「滑上来」的，onApplyWindowInsets 只在动画结束时给最终高度，
+        // WebView 就会一步缩到位、输入框瞬间弹上去，跟键盘完全不在一个节奏上。
+        // 这里挂上输入法动画回调，逐帧把键盘高度同步给 padding，页面高度跟键盘一起升，
+        // 收键盘时同理一起降，才有跟手的顺滑感。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            root.setWindowInsetsAnimationCallback(new WindowInsetsAnimation.Callback(
+                    WindowInsetsAnimation.Callback.DISPATCH_MODE_STOP) {
+                @Override
+                public WindowInsets onProgress(WindowInsets insets,
+                                               List<WindowInsetsAnimation> runningAnimations) {
+                    for (WindowInsetsAnimation animation : runningAnimations) {
+                        if ((animation.getTypeMask() & WindowInsets.Type.ime()) != 0) {
+                            applyImeInset(root, insets);
+                            break;
+                        }
+                    }
+                    return insets;
+                }
+            });
+        }
 
         // restoreState 有可能返回 null（上一次没保存成功），这时必须重新 load，
         // 否则会停在一片空白，用户看到的就是「打不开」

@@ -14138,32 +14138,40 @@
     <script>
 
         // 页面高度跟着「真正能看见的那块」走：
-        // 壳子是全屏的，键盘弹出时靠 Java 侧把 WebView 让出键盘高度，
-        // 这里再把 innerHeight / visualViewport 取小的那个写进 --app-height，
-        // 底部输入框才会被顶到键盘上方。
-        const setAppHeight = () => {
+        // 键盘升降由 Java 侧逐帧同步成 WebView 尺寸，这里只用 rAF 节流跟着更新 --app-height，
+        // 一帧只算一次，既不打断键盘动画的节奏，也不会白跑重排。
+        const keepChatScrollAtBottom = () => {
+            const box = document.getElementById('chat-messages');
+            if (!box) return;
+            // 只有原本贴着底（或离底很近）才跟着键盘走；用户正在翻历史时别抢滚动条
+            if (box.scrollHeight - box.scrollTop - box.clientHeight <= 160) {
+                box.scrollTop = box.scrollHeight;
+            }
+        };
+        let appHeightFrame = 0;
+        const applyAppHeight = () => {
             const doc = document.documentElement;
             const vv = window.visualViewport;
             const vvH = (vv && vv.height) ? Math.round(vv.height) : 0;
             const inner = Math.round(window.innerHeight) || vvH;
             const h = vvH > 0 ? Math.min(vvH, inner) : inner;
+            if (doc.style.getPropertyValue('--app-height') === `${h}px`) return;
             doc.style.setProperty('--app-height', `${h}px`);
+            keepChatScrollAtBottom();
         };
-        setAppHeight();
+        const setAppHeight = () => {
+            if (appHeightFrame) return;
+            appHeightFrame = requestAnimationFrame(() => {
+                appHeightFrame = 0;
+                applyAppHeight();
+            });
+        };
+        applyAppHeight();
         window.addEventListener('resize', setAppHeight);
         window.addEventListener('orientationchange', setAppHeight);
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', setAppHeight);
         }
-        // 键盘弹出/收起是段动画，中途量到的不是最终高度，动画结束再校两次
-        document.addEventListener('focusin', () => {
-            setTimeout(setAppHeight, 120);
-            setTimeout(setAppHeight, 420);
-        }, true);
-        document.addEventListener('focusout', () => {
-            setTimeout(setAppHeight, 120);
-            setTimeout(setAppHeight, 420);
-        }, true);
 
         const md = window.markdownit();
 
@@ -20904,10 +20912,6 @@ ${commonContext}`;
             setTimeout(() => {
                 scrollToBottom();
             }, 200);
-            // 键盘动画结束后再贴一次底：容器高度刚变过，早滚的话会停在中间
-            setTimeout(() => {
-                scrollToBottom();
-            }, 460);
         });
 
         const chatPage = document.getElementById('page-chat');
