@@ -136,7 +136,7 @@ const STEPS = 20;
   // 閿洏楂樺害鏄粠 0 鐩存帴璺冲埌 344 鐨勩€傝繖绉嶃€屼竴姝ュ埌浣嶃€嶅悓鏍峰繀椤昏创搴曘€佷笉鑳借惤鍚庛€?
   await setKb(0);
   const jumpStart = await probeRaw();
-  // 一步跳到 344（Android 10 / 部分 ROM 不给中间帧）：单帧最多 dt*4px，
+  // 一步跳到 344（Android 10 / 部分 ROM 不给中间帧）：单帧最多 cap = min(48, dt*1.4)，
   // 必须在几帧里摊开，不能一帧闪到底；中间帧自身也要自洽（不能撕裂）。
   await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${KB_MAX});` });
   await sleep(34);
@@ -153,6 +153,19 @@ const STEPS = 20;
   console.log(`jump 0->${KB_MAX}: input.bottom=${jumpIn.inputBottom} expect=${jumpIn.inner - KB_MAX} atBottom=${jumpIn.atBottom} / back atBottom=${jumpOut.atBottom}`);
   console.log(`  step-limit @1frame: kb=${midKb.toFixed(0)} (expect 1..${KB_MAX - 40}) self-consistent=${midSelf} ${jumpOk ? 'OK' : 'FAIL'}`);
   console.log(`jump 0->${KB_MAX}: input.bottom=${jumpIn.inputBottom} expect=${jumpIn.inner - KB_MAX} atBottom=${jumpIn.atBottom} / back atBottom=${jumpOut.atBottom} ${jumpOk ? 'OK' : 'FAIL'}`);
+
+  // 节奏必须和 Android IME 的动画（约 250ms）同量级。
+  // 之前是「每帧固定 40px」：60fps 下 8 帧就跑完（~140ms），输入框先弹到位置、
+  // 再悬空等键盘一百多毫秒 —— 这就是肉眼看到的「跳一下」。
+  await setKb(0);
+  const riseT0 = Date.now();
+  await setKb(KB_MAX);
+  const riseMs = Date.now() - riseT0;
+  const fallT0 = Date.now();
+  await setKb(0);
+  const fallMs = Date.now() - fallT0;
+  const paceOk = riseMs >= 150 && riseMs <= 700 && fallMs >= 150 && fallMs <= 700;
+  console.log(`pace: rise ${riseMs}ms / fall ${fallMs}ms (expect 150..700, 与 IME 的 250ms 同量级) ${paceOk ? 'OK' : 'FAIL'}`);
 
   // 銆屾洿澶氬姛鑳姐€嶉潰鏉匡細鎵撳紑鏃惰璐村埌閿洏涓婃柟锛屽叧鍥炲幓涔嬪悗蹇呴』閲嶆柊钘忓埌瑙嗗彛澶栵紙涓嶈兘闇蹭竴鎴級
   // 序号防乱序：键盘动画期间 evaluateJavascript 一帧一发，晚到的旧帧必须被丢掉，
@@ -175,6 +188,19 @@ const STEPS = 20;
   const anchorRes = await send('Runtime.evaluate', { returnByValue: true, expression: `getComputedStyle(document.getElementById('chat-messages')).overflowAnchor` });
   const anchorOk = anchorRes.result.result.value === 'none';
   console.log(`overflow-anchor: ${anchorRes.result.result.value} (expect none) ${anchorOk ? 'OK' : 'FAIL'}`);
+
+  // 键盘开着时用户往上翻历史：之后再来的 --kb 变化不能把他拽回底部。
+  // 旧代码这里挂的是 keepChatScrollAtBottom()（160px 容忍），往上翻一点点就会被
+  // 每帧拽回底部 —— 这才是「消息区乱跳」最主要的来源。
+  await setKb(KB_MAX);
+  await send('Runtime.evaluate', { expression: `(()=>{const b=document.getElementById('chat-messages');b.scrollTop=200;})();` });
+  await sleep(150);
+  await setKb(KB_MAX - 60);   // 键盘高度微调一次，触发 kbWrite
+  const scRes = await send('Runtime.evaluate', { returnByValue: true, expression: `(()=>{const b=document.getElementById('chat-messages');return JSON.stringify({top: Math.round(b.scrollTop), max: Math.round(b.scrollHeight-b.clientHeight)});})()` });
+  const sc = JSON.parse(scRes.result.result.value);
+  const userScrollOk = sc.max - sc.top >= 100;   // 还停在上面，没被拽回底部
+  await setKb(0);
+  console.log(`user scroll: scrollTop=${sc.top} max=${sc.max} awayFromBottom=${sc.max - sc.top} (expect >=100, 翻历史不许被拽回底部) ${userScrollOk ? 'OK' : 'FAIL'}`);
 
   const probeNow = async () => {
     const r = await send('Runtime.evaluate', { returnByValue: true, expression: PROBE });
@@ -283,10 +309,10 @@ const STEPS = 20;
   console.log(`monotonic: ${nonMono === 0 ? 'yes (no bounce back)' : 'NO (' + nonMono + ' reversals)'}`);
   console.log(`no leak into keyboard area: ${leaks === 0 ? 'yes' : 'NO (' + leaks + ' frames leaked)'}`);
   const allOk = bad === 0 && nonMono === 0 && jumpOk && panelOk && safeOk && pageOk
-    && modalOk && vcOk && leaks === 0 && seqOk && anchorOk;
+    && modalOk && vcOk && leaks === 0 && seqOk && anchorOk && paceOk && userScrollOk;
   console.log(allOk
-    ? `\n[PASS] ${rows.length} frames: input tracks keyboard (step-limited, stale frames dropped), wallpaper frozen, panel never leaks, safe-area yields, other pages & modals clear the keyboard`
-    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals, jump=${jumpOk}, panel=${panelOk}, safe=${safeOk}, pages=${pageOk}, modal=${modalOk}, vc=${vcOk}, leaks=${leaks}, seq=${seqOk}, anchor=${anchorOk}`);
+    ? `\n[PASS] ${rows.length} frames: input tracks keyboard (250ms eased, stale frames dropped), wallpaper frozen, panel never leaks, safe-area yields, history scroll never yanked back`
+    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals, jump=${jumpOk}, pace=${paceOk}, panel=${panelOk}, safe=${safeOk}, pages=${pageOk}, modal=${modalOk}, vc=${vcOk}, leaks=${leaks}, seq=${seqOk}, anchor=${anchorOk}, userScroll=${userScrollOk}`);
 
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(OUT, 'shot-chat-kb.png'), Buffer.from(shot.result.data, 'base64'));

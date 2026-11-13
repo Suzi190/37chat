@@ -14237,10 +14237,37 @@
         //      Java 带一个自增序号过来，序号不比上一个小就整帧丢掉。
         //   2. 部分 ROM 的 onProgress 会给出突跳值（一帧从 0 到 344），看起来就是「闪一下」。
         //      所以真正写进 CSS 的值由 rAF 逐帧逼近目标，单帧位移不超过 dt*4px。
+        // Android IME 的弹出/收起动画约 250ms。页面侧必须用同一个时间基准：
+        // 写成「每帧固定 N px」会跟帧率走 —— 60fps 时 8 帧（140ms）就跑完了，
+        // 输入框会先弹到位置、再悬空等键盘一百多毫秒，看着就是「跳一下」。
+        const KB_ANIM_MS = 250;
         const kbState = {
             seq: -1, target: 0, shown: 0, dir: 0, raf: 0, t: 0, had: false,
+            // 当前这一段缓动：from(起点值) → to(终点值)，t0 是起始时刻
+            from: 0, to: 0, t0: 0, animDir: 0,
+            // 键盘开始动的那一刻用户是否贴着底。只有它才允许每帧跟随滚到底；
+            // 翻历史时一帧都不许写 scrollTop（否则每帧被拽回底部，是另一种乱跳）。
+            pinBottom: true,
             calls: 0, dropped: 0, rev: 0, maxJump: 0, trace: []
         };
+
+        // 用户自己滚动时同步「是否贴着底」：键盘还开着、用户往上翻历史，
+        // 如果 pinBottom 一直停在 true，任何一次 --kb 变化都会把列表拽回底部。
+        // kbSelfScroll / kbSelfScrollTop 用来忽略「页面自己写进去的那一次滚动」。
+        let kbSelfScroll = false;
+        let kbSelfScrollTop = -1;
+        const chatScrollBox = document.getElementById('chat-messages');
+        if (chatScrollBox) {
+            chatScrollBox.addEventListener('scroll', () => {
+                if (kbSelfScroll && Math.abs(chatScrollBox.scrollTop - kbSelfScrollTop) <= 1) {
+                    kbSelfScroll = false;
+                    return;
+                }
+                kbSelfScroll = false;
+                kbState.pinBottom =
+                    chatScrollBox.scrollHeight - chatScrollBox.scrollTop - chatScrollBox.clientHeight <= 32;
+            }, { passive: true });
+        }
 
         const kbWrite = (px) => {
             const doc = document.documentElement;
@@ -14249,14 +14276,13 @@
             doc.style.setProperty('--kb', px > 0.5 ? px.toFixed(2) + 'px' : '0px');
             const box = document.getElementById('chat-messages');
             if (!box) return;
-            // 变化之前是不是贴着底。不能直接用 keepChatScrollAtBottom 判断：它留了 160px 的容忍，
-            // 键盘一次性跳到 344px 时（Android 10 没有逐帧动画）差值会超过容忍，结果就不贴底了。
-            if (box.scrollHeight - box.scrollTop - box.clientHeight <= 32) {
-                // 上面刚改过变量，这里读 scrollHeight 会顺带把布局算完，同一帧就能贴到底
+            // 只有「键盘开始动之前就贴着底」才允许每帧跟随贴底。
+            // 以前这里挂的是 keepChatScrollAtBottom()，它有 160px 容忍 ——
+            // 用户往上翻不到 160px 时会被每一帧拽回底部，看着就是消息区在乱跳。
+            if (kbState.pinBottom) {
                 box.scrollTop = box.scrollHeight;
-            } else {
-                // 用户正在翻历史，别抢他的滚动条
-                keepChatScrollAtBottom();
+                kbSelfScroll = true;
+                kbSelfScrollTop = box.scrollTop;
             }
         };
 
@@ -14277,12 +14303,17 @@
                 }
                 return;
             }
-            // 单帧位移上限必须是个定值：写成 dt*4 的话，rAF 一掉帧 dt 就变大，
-            // 步子反而更大（真机上抓到过 dt=32 → 一帧走 128px，屏幕上就是「啪」地跳一下）。
-            // 40px/帧：真实键盘动画约 22px/帧，够用不滞后；突跳最多被摊成 9 帧（约 150ms）。
-            const maxStep = Math.max(8, Math.min(40, dt * 4));
+            // 时间基准的 ease-out：总时长 KB_ANIM_MS，跟 Android IME 的 250ms 对齐。
+            // 60fps / 30fps 下走完的时间一样，不会因为掉帧而节奏变快变慢。
+            const p = kbState.t0 ? Math.min(1, (now - kbState.t0) / KB_ANIM_MS) : 1;
+            const e = 1 - Math.pow(1 - p, 3);
+            const want = kbState.from + (kbState.to - kbState.from) * e;
+            // 单帧上限按 dt 缩放（掉帧时步子跟着放大，避免整体变慢），
+            // 但压一个绝对上限 48px —— 只写 dt*k 的话闪帧时会一路吃到 128px。
+            const cap = Math.min(48, Math.max(8, dt * 1.4));
             const before = kbState.shown;
-            kbState.shown += Math.sign(gap) * Math.min(Math.abs(gap), maxStep);
+            const delta = want - before;
+            kbState.shown += Math.abs(delta) > cap ? Math.sign(delta) * cap : delta;
             const dir = Math.sign(kbState.shown - before);
             if (dir !== 0) {
                 if (kbState.dir !== 0 && dir !== kbState.dir) kbState.rev += 1;
@@ -14340,6 +14371,34 @@
             if (Number.isFinite(s)) {
                 if (s <= kbState.seq) { kbState.dropped += 1; return; }
                 kbState.seq = s;
+            }
+            const now = (window.performance && performance.now) ? performance.now() : Date.now();
+            const diff = px - kbState.to;
+            const dir = Math.sign(diff);
+            if (Math.abs(diff) >= 2) {
+                // 同方向、且这一段动画还没走太远：只推进终点，不重启动画
+                //（否则 Java 在动画末尾连续送 325/326，会把总时长越拖越长）。
+                if (dir === kbState.animDir && kbState.t0 && now - kbState.t0 < KB_ANIM_MS * 1.6) {
+                    kbState.to = px;
+                } else {
+                    // 换方向（弹出 ↔ 收起）或新的一段：从当前显示值出发重新计一段，
+                    // 这样中途反转不会跳，也不会走回头路。
+                    kbState.from = kbState.shown;
+                    kbState.to = px;
+                    kbState.t0 = now;
+                    kbState.animDir = dir;
+                }
+            } else {
+                // 末端微调（326 → 325 这种 1px 级别），只挪终点，动画不动
+                kbState.to = px;
+            }
+            // 键盘「开始出现 / 开始收起」的那一帧，记下用户是不是正贴着底。
+            // 必须在 target 改之前采样：改完布局就变了，采到的是新状态。
+            if ((kbState.target > 0.5) !== (px > 0.5)) {
+                const box = document.getElementById('chat-messages');
+                kbState.pinBottom = box
+                    ? (box.scrollHeight - box.scrollTop - box.clientHeight <= 32)
+                    : true;
             }
             kbState.target = px;
             if (px > 0.5) kbState.had = true;
