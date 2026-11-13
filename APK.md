@@ -194,6 +194,17 @@ gradle assembleRelease    # 产物：android/app/build/outputs/apk/release/app-r
    它已经接进 CI（`校验内联脚本语法` 步骤）：语法不过就直接红叉，不会再产出白屏包。
    手动改完 `app/index.html` 后建议先跑一遍。
 
+   还有个更接近真机的验证（本地跑，需要 Node 22+ 与本机的 Chrome/Edge）：
+
+   ```bash
+   node tools/prepare-apk-assets.mjs
+   node tools/smoke-test-page.mjs
+   ```
+
+   它用 headless Chrome/Edge 真打开打包后的页面，等 9 秒再检查
+   「开屏关掉了 / 进了首页 / 没有未捕获异常」，逐条输出 `[PASS]` / `[FAIL]`。
+   `Invalid or unexpected token` 那类问题在这里会直接 FAIL。
+
 如果仍然直接闪退（连错误页都来不及显示），那就是进程级/native 崩溃，需要系统日志：
 
 ```bash
