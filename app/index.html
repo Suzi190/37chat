@@ -132,6 +132,36 @@
             bottom: var(--kb, 0px);
         }
 
+        /* 键盘弹起时，底部导航条那截已经被键盘盖住了，输入栏不该再给 safe-area 留位，
+           否则输入框会悬在键盘上方一条几十 px 的缝（全面屏上特别明显）。 */
+        html.android-shell.kb-open .chat-input-area {
+            padding-bottom: 10px;
+        }
+
+        /* 「更多功能」面板贴着键盘顶边时，底部同样不需要安全区留白。 */
+        html.android-shell.kb-open #page-chat.actions-panel-open #chat-actions-panel {
+            padding-bottom: 0;
+        }
+
+        /* 视频通话界面：容器高度写的是 75vh（相对没变的视口），键盘弹起会被压住，
+           这里按键盘高度收一下，输入栏跟着上移。 */
+        html.android-shell.kb-open #video-call-modal .video-call-container {
+            height: min(75vh, calc(100vh - var(--kb, 0px) - 40px));
+        }
+
+        /* 其它页面（表单 / 编辑 / 评论 / 列表）也要让出键盘高度，
+           否则输入框直接被键盘盖住、还滚不出来（因为现在不再缩 WebView 尺寸了）。
+           含 .chat-main-area 的聊天类页面由上面那条单独处理，这里排除，免得双倍压缩。 */
+        html.android-shell .page.active:not(#page-chat):not(#page-chat-app-detail):not(#page-offline-chat):not(#page-play-together):not(#page-grand-theater):not(#page-hot-search-detail) {
+            padding-bottom: var(--kb, 0px);
+        }
+
+        /* 弹窗（发朋友圈 / 写帖子 / 编辑消息 / 语音转文字等）键盘弹出时整体上移，
+           别让里面的输入框掉到键盘下面。 */
+        html.android-shell.kb-open .modal-overlay {
+            padding-bottom: var(--kb, 0px);
+        }
+
         .status-bar {
             width: 100%;
             /* 安卓壳：刘海 / 挖孔高度写进 --android-inset-top（Java 侧注入），
@@ -14204,6 +14234,8 @@
             // 它留了 160px 的容忍，而键盘一次性跳到 344px 时（Android 10 没有逐帧动画）
             // 差值会超过容忍，结果就不贴底了，看起来又是「猛地跳一下」。
             const wasAtBottom = box ? box.scrollHeight - box.scrollTop - box.clientHeight <= 32 : false;
+            // 键盘在场时挂个类：输入栏底部的 safe-area 留白要让位给键盘，否则输入框悬空一条缝。
+            doc.classList.toggle('kb-open', px > 0.5);
             doc.style.setProperty('--kb', next);
             if (box) {
                 if (wasAtBottom) {

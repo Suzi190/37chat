@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * 模拟真机的新键盘链路：WebView 尺寸全程不变，Java 只逐帧调用 window.__appKeyboardInset(dp)。
- * 检查每一帧：
- *   1) 视口 / .app-container / .chat-main-area 的盒子和位置都不变（=> 壁纸不可能动）
- *   2) 输入栏底边 == 视口高度 - 键盘高度（跟手，不落后）
- *   3) 收起时同样逐帧回位，且整段单调（不允许回弹/来回跳）
- *   4) 消息区在贴底状态下始终贴着底
+ * 妯℃嫙鐪熸満鐨勬柊閿洏閾捐矾锛歐ebView 灏哄鍏ㄧ▼涓嶅彉锛孞ava 鍙€愬抚璋冪敤 window.__appKeyboardInset(dp)銆?
+ * 妫€鏌ユ瘡涓€甯э細
+ *   1) 瑙嗗彛 / .app-container / .chat-main-area 鐨勭洅瀛愬拰浣嶇疆閮戒笉鍙橈紙=> 澹佺焊涓嶅彲鑳藉姩锛?
+ *   2) 杈撳叆鏍忓簳杈?== 瑙嗗彛楂樺害 - 閿洏楂樺害锛堣窡鎵嬶紝涓嶈惤鍚庯級
+ *   3) 鏀惰捣鏃跺悓鏍烽€愬抚鍥炰綅锛屼笖鏁存鍗曡皟锛堜笉鍏佽鍥炲脊/鏉ュ洖璺筹級
+ *   4) 娑堟伅鍖哄湪璐村簳鐘舵€佷笅濮嬬粓璐寸潃搴?
  */
 const http = require('node:http');
 const fs = require('node:fs');
@@ -54,7 +54,7 @@ const PROBE = `(()=>{
   });
 })()`;
 
-const KB_MAX = 344;   // 390x844 的手机上键盘大概这么高（CSS px = dp）
+const KB_MAX = 344;   // 390x844 鐨勬墜鏈轰笂閿洏澶ф杩欎箞楂橈紙CSS px = dp锛?
 const STEPS = 20;
 
 
@@ -89,7 +89,7 @@ const STEPS = 20;
   await send('Page.navigate', { url: `http://127.0.0.1:${port}/index.html` });
   await sleep(9000);
 
-  // 模拟 Java onPageFinished：补 android-shell 类，切到聊天页，塞一屏消息
+  // 妯℃嫙 Java onPageFinished锛氳ˉ android-shell 绫伙紝鍒囧埌鑱婂ぉ椤碉紝濉炰竴灞忔秷鎭?
   await send('Runtime.evaluate', { expression: `(()=>{
     document.documentElement.classList.add('android-shell');
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -105,7 +105,7 @@ const STEPS = 20;
 
   const rows = [];
   const step = async (kb) => {
-    // 真机上这一步是 Java 在 onProgress 里调 evaluateJavascript（同一帧）
+    // 鐪熸満涓婅繖涓€姝ユ槸 Java 鍦?onProgress 閲岃皟 evaluateJavascript锛堝悓涓€甯э級
     await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${kb});` });
     await sleep(34);
     const r = await send('Runtime.evaluate', { returnByValue: true, expression: PROBE });
@@ -115,8 +115,8 @@ const STEPS = 20;
   for (let i = 0; i <= STEPS; i += 1) await step((KB_MAX * i) / STEPS);
   for (let i = STEPS; i >= 0; i -= 1) await step((KB_MAX * i) / STEPS);
 
-  // 一次性跳变场景：Android 10 没有逐帧动画、个别 ROM 也不派发中间进度，
-  // 键盘高度是从 0 直接跳到 344 的。这种「一步到位」同样必须贴底、不能落后。
+  // 涓€娆℃€ц烦鍙樺満鏅細Android 10 娌℃湁閫愬抚鍔ㄧ敾銆佷釜鍒?ROM 涔熶笉娲惧彂涓棿杩涘害锛?
+  // 閿洏楂樺害鏄粠 0 鐩存帴璺冲埌 344 鐨勩€傝繖绉嶃€屼竴姝ュ埌浣嶃€嶅悓鏍峰繀椤昏创搴曘€佷笉鑳借惤鍚庛€?
   await step(0);
   await step(KB_MAX);
   const jumpIn = rows[rows.length - 1];
@@ -126,13 +126,13 @@ const STEPS = 20;
   const jumpOk = jumpGap <= 1 && jumpIn.atBottom <= 2 && jumpOut.atBottom <= 2;
   console.log(`jump 0->${KB_MAX}: input.bottom=${jumpIn.inputBottom} expect=${jumpIn.inner - KB_MAX} atBottom=${jumpIn.atBottom} / back atBottom=${jumpOut.atBottom} ${jumpOk ? 'OK' : 'FAIL'}`);
 
-  // 「更多功能」面板：打开时要贴到键盘上方，关回去之后必须重新藏到视口外（不能露一截）
+  // 銆屾洿澶氬姛鑳姐€嶉潰鏉匡細鎵撳紑鏃惰璐村埌閿洏涓婃柟锛屽叧鍥炲幓涔嬪悗蹇呴』閲嶆柊钘忓埌瑙嗗彛澶栵紙涓嶈兘闇蹭竴鎴級
   const probeNow = async () => {
     const r = await send('Runtime.evaluate', { returnByValue: true, expression: PROBE });
     return JSON.parse(r.result.result.value);
   };
   await send('Runtime.evaluate', { expression: `document.getElementById('page-chat').classList.add('actions-panel-open');` });
-  await sleep(700); // 等 0.4s 的 transform 过渡跑完
+  await sleep(700); // 绛?0.4s 鐨?transform 杩囨浮璺戝畬
   await send('Runtime.evaluate', { expression: 'window.__appKeyboardInset(0);' });
   await sleep(60);
   const pOpen0 = await probeNow();
@@ -142,10 +142,69 @@ const STEPS = 20;
   await send('Runtime.evaluate', { expression: `document.getElementById('page-chat').classList.remove('actions-panel-open');window.__appKeyboardInset(0);` });
   await sleep(700);
   const pBack = await probeNow();
-  const panelOk = Math.abs(pOpen0.panelLift) <= 1                 // 无键盘：面板底边贴页面底
-    && Math.abs(pOpenKb.panelLift - KB_MAX) <= 1                  // 有键盘：面板底边贴键盘顶
-    && pBack.panelTop >= pBack.inner - 1;                         // 收回后完全在视口外
+  const panelOk = Math.abs(pOpen0.panelLift) <= 1                 // 鏃犻敭鐩橈細闈㈡澘搴曡竟璐撮〉闈㈠簳
+    && Math.abs(pOpenKb.panelLift - KB_MAX) <= 1                  // 鏈夐敭鐩橈細闈㈡澘搴曡竟璐撮敭鐩橀《
+    && pBack.panelTop >= pBack.inner - 1;                         // 鏀跺洖鍚庡畬鍏ㄥ湪瑙嗗彛澶?
   console.log(`panel: open kb=0 lift=${pOpen0.panelLift}(expect 0)  open kb=${KB_MAX} lift=${pOpenKb.panelLift}(expect ${KB_MAX})  closed top=${pBack.panelTop}(expect >=${pBack.inner}) ${panelOk ? 'OK' : 'FAIL'}`);
+
+  // 鐪熸満鍏ㄩ潰灞忔湁 env(safe-area-inset-bottom)锛堢害 34px锛夛紝headless 閲屾亽涓?0锛?
+  // 鐢ㄤ竴鏉′綆浼樺厛绾х殑瑙勫垯鎶婂畠妯℃嫙鍑烘潵锛氶敭鐩樺脊璧锋椂杩欐鐣欑櫧蹇呴』璁╃粰閿洏锛屽惁鍒欒緭鍏ユ鎮┖涓€鏉＄紳銆?
+  await send('Runtime.evaluate', { expression: `(()=>{const s=document.createElement('style');s.id='test-safe-area';s.textContent='html.android-shell .chat-input-area{padding-bottom:44px;}';document.head.appendChild(s);})();` });
+  const padOf = async () => {
+    const r = await send('Runtime.evaluate', { returnByValue: true, expression: `(()=>{const e=document.querySelector('#page-chat .chat-input-area');return JSON.stringify({pad: Math.round(parseFloat(getComputedStyle(e).paddingBottom)), kbOpen: document.documentElement.classList.contains('kb-open')});})()` });
+    return JSON.parse(r.result.result.value);
+  };
+  await send('Runtime.evaluate', { expression: 'window.__appKeyboardInset(0);' });
+  await sleep(60);
+  const padClosed = await padOf();
+  await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${KB_MAX});` });
+  await sleep(60);
+  const padOpen = await padOf();
+  await send('Runtime.evaluate', { expression: `document.getElementById('test-safe-area').remove();window.__appKeyboardInset(0);` });
+  await sleep(60);
+  const safeOk = Math.abs(padClosed.pad - 44) <= 1 && Math.abs(padOpen.pad - 10) <= 1 && padOpen.kbOpen === true;
+  console.log(`safe-area: kb=0 pad=${padClosed.pad}(expect 44)  kb=${KB_MAX} pad=${padOpen.pad}(expect 10)  kb-open=${padOpen.kbOpen} ${safeOk ? 'OK' : 'FAIL'}`);
+
+  // ---- 闈炶亰澶╅〉锛堣〃鍗?/ 缂栬緫 / 璇勮锛夊拰寮圭獥锛氶敭鐩樺脊鍑烘椂蹇呴』璁╁嚭閿洏楂樺害锛屽埆鎶婅緭鍏ユ鐩栦綇 ----
+  await send('Runtime.evaluate', { expression: `(()=>{
+    document.getElementById('page-chat').classList.remove('active');
+    document.getElementById('page-chat-summary').classList.add('active');
+    window.__appKeyboardInset(${KB_MAX});
+  })();` });
+  await sleep(80);
+  const pagePad = await (async () => {
+    const r = await send('Runtime.evaluate', { returnByValue: true, expression: `(()=>{const p=document.getElementById('page-chat-summary');return JSON.stringify({pad: Math.round(parseFloat(getComputedStyle(p).paddingBottom)), chatPad: Math.round(parseFloat(getComputedStyle(document.getElementById('page-chat')).paddingBottom))});})()` });
+    return JSON.parse(r.result.result.value);
+  })();
+  const pageOk = Math.abs(pagePad.pad - KB_MAX) <= 1 && pagePad.chatPad === 0; // 鑱婂ぉ椤典笉鑳介噸澶嶅悆涓€閬?
+
+  await send('Runtime.evaluate', { expression: `(()=>{const ov=document.querySelector('.modal-overlay');ov.style.display='flex';})();` });
+  await sleep(80);
+  const modalPad = await (async () => {
+    const r = await send('Runtime.evaluate', { returnByValue: true, expression: `(()=>{const ov=document.querySelector('.modal-overlay');return JSON.stringify({pad: Math.round(parseFloat(getComputedStyle(ov).paddingBottom))});})()` });
+    return JSON.parse(r.result.result.value);
+  })();
+  const modalOk = Math.abs(modalPad.pad - KB_MAX) <= 1;
+
+  // 瑙嗛閫氳瘽鐣岄潰锛堜篃鏄?.modal-overlay锛屼絾瀹瑰櫒鍐欐 75vh锛夊湪閿洏寮硅捣鏃惰鏀剁煯
+  await send('Runtime.evaluate', { expression: `(()=>{document.getElementById('video-call-modal').style.display='flex';})();` });
+  await sleep(80);
+  const vc = await (async () => {
+    const r = await send('Runtime.evaluate', { returnByValue: true, expression: `(()=>{const c=document.querySelector('#video-call-modal .video-call-container');const b=c.getBoundingClientRect();return JSON.stringify({h: Math.round(b.height), bottom: Math.round(b.bottom), inner: window.innerHeight});})()` });
+    return JSON.parse(r.result.result.value);
+  })();
+  await send('Runtime.evaluate', { expression: `(()=>{document.getElementById('video-call-modal').style.display='none';})();` });
+  const vcOk = vc.h <= vc.inner - KB_MAX - 39 && vc.bottom <= vc.inner - KB_MAX + 1;
+
+  await send('Runtime.evaluate', { expression: `(()=>{
+    document.querySelector('.modal-overlay').style.display='';
+    document.getElementById('page-chat-summary').classList.remove('active');
+    document.getElementById('page-chat').classList.add('active');
+    window.__appKeyboardInset(0);
+  })();` });
+  await sleep(80);
+  console.log(`other pages: padding-bottom=${pagePad.pad}(expect ${KB_MAX}) chat-page=${pagePad.chatPad}(expect 0) ${pageOk ? 'OK' : 'FAIL'}  | modal overlay=${modalPad.pad}(expect ${KB_MAX}) ${modalOk ? 'OK' : 'FAIL'}`);
+  console.log(`video-call: container h=${vc.h}(expect <=${vc.inner - KB_MAX - 40}) bottom=${vc.bottom}(expect <=${vc.inner - KB_MAX}) ${vcOk ? 'OK' : 'FAIL'}`);
 
   const base = rows[0];
   let bad = 0;
@@ -155,9 +214,9 @@ const STEPS = 20;
     const gap = Math.abs(r.inputBottom - (r.inner - kb));
     const steady = r.containerH === base.containerH && r.mainTop === base.mainTop && r.mainH === base.mainH;
     const anchored = r.atBottom <= 2;
-    // 「更多功能」面板关闭时必须整个在视口之外，不能露出任何一截
+    // 銆屾洿澶氬姛鑳姐€嶉潰鏉垮叧闂椂蹇呴』鏁翠釜鍦ㄨ鍙ｄ箣澶栵紝涓嶈兘闇插嚭浠讳綍涓€鎴?
     const panelHidden = r.panelTop >= r.inner - 1;
-    // 消息区不能伸进键盘区域
+    // 娑堟伅鍖轰笉鑳戒几杩涢敭鐩樺尯鍩?
     const msgInside = r.msgBottom <= r.inner - kb + 1;
     if (gap > 1 || !steady || !anchored) bad += 1;
     if (!panelHidden || !msgInside) leaks += 1;
@@ -176,13 +235,13 @@ const STEPS = 20;
   console.log(`box steady: ${rows.every((r) => r.containerH === base.containerH && r.mainTop === base.mainTop && r.mainH === base.mainH) ? 'yes (viewport & wallpaper never move)' : 'NO'}`);
   console.log(`monotonic: ${nonMono === 0 ? 'yes (no bounce back)' : 'NO (' + nonMono + ' reversals)'}`);
   console.log(`no leak into keyboard area: ${leaks === 0 ? 'yes' : 'NO (' + leaks + ' frames leaked)'}`);
-  console.log(bad === 0 && nonMono === 0 && jumpOk && panelOk && leaks === 0
-    ? `\n[PASS] ${rows.length} frames: input tracks keyboard, wallpaper frozen, panel never leaks`
-    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals, jump=${jumpOk}, panel=${panelOk}, leaks=${leaks}`);
+  console.log(bad === 0 && nonMono === 0 && jumpOk && panelOk && safeOk && pageOk && modalOk && vcOk && leaks === 0
+    ? `\n[PASS] ${rows.length} frames: input tracks keyboard, wallpaper frozen, panel never leaks, safe-area yields, other pages & modals clear the keyboard`
+    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals, jump=${jumpOk}, panel=${panelOk}, safe=${safeOk}, pages=${pageOk}, modal=${modalOk}, vc=${vcOk}, leaks=${leaks}`);
 
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(OUT, 'shot-chat-kb.png'), Buffer.from(shot.result.data, 'base64'));
 
   ws.close(); child.kill(); server.close();
-  process.exit(bad === 0 && nonMono === 0 && jumpOk && panelOk && leaks === 0 ? 0 : 1);
+  process.exit(bad === 0 && nonMono === 0 && jumpOk && panelOk && safeOk && pageOk && modalOk && vcOk && leaks === 0 ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });
