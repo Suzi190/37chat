@@ -44,7 +44,9 @@ const PROBE = `(()=>{
     mainTop: Math.round(main.top),
     mainH: Math.round(main.height),
     msgH: Math.round(box.clientHeight),
+    msgBottom: Math.round(box.getBoundingClientRect().bottom),
     inputBottom: Math.round(foot.bottom),
+    panelTop: Math.round(panel.top),
     panelLift: Math.round(window.innerHeight - panel.bottom),
     atBottom: Math.round(box.scrollHeight - box.scrollTop - box.clientHeight),
     bridge: typeof window.AndroidBridge,
@@ -124,16 +126,43 @@ const STEPS = 20;
   const jumpOk = jumpGap <= 1 && jumpIn.atBottom <= 2 && jumpOut.atBottom <= 2;
   console.log(`jump 0->${KB_MAX}: input.bottom=${jumpIn.inputBottom} expect=${jumpIn.inner - KB_MAX} atBottom=${jumpIn.atBottom} / back atBottom=${jumpOut.atBottom} ${jumpOk ? 'OK' : 'FAIL'}`);
 
+  // 「更多功能」面板：打开时要贴到键盘上方，关回去之后必须重新藏到视口外（不能露一截）
+  const probeNow = async () => {
+    const r = await send('Runtime.evaluate', { returnByValue: true, expression: PROBE });
+    return JSON.parse(r.result.result.value);
+  };
+  await send('Runtime.evaluate', { expression: `document.getElementById('page-chat').classList.add('actions-panel-open');` });
+  await sleep(700); // 等 0.4s 的 transform 过渡跑完
+  await send('Runtime.evaluate', { expression: 'window.__appKeyboardInset(0);' });
+  await sleep(60);
+  const pOpen0 = await probeNow();
+  await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${KB_MAX});` });
+  await sleep(60);
+  const pOpenKb = await probeNow();
+  await send('Runtime.evaluate', { expression: `document.getElementById('page-chat').classList.remove('actions-panel-open');window.__appKeyboardInset(0);` });
+  await sleep(700);
+  const pBack = await probeNow();
+  const panelOk = Math.abs(pOpen0.panelLift) <= 1                 // 无键盘：面板底边贴页面底
+    && Math.abs(pOpenKb.panelLift - KB_MAX) <= 1                  // 有键盘：面板底边贴键盘顶
+    && pBack.panelTop >= pBack.inner - 1;                         // 收回后完全在视口外
+  console.log(`panel: open kb=0 lift=${pOpen0.panelLift}(expect 0)  open kb=${KB_MAX} lift=${pOpenKb.panelLift}(expect ${KB_MAX})  closed top=${pBack.panelTop}(expect >=${pBack.inner}) ${panelOk ? 'OK' : 'FAIL'}`);
+
   const base = rows[0];
   let bad = 0;
+  let leaks = 0;
   rows.forEach((r, i) => {
     const kb = Math.abs(Number.parseFloat(r.kb || '0') || 0);
     const gap = Math.abs(r.inputBottom - (r.inner - kb));
     const steady = r.containerH === base.containerH && r.mainTop === base.mainTop && r.mainH === base.mainH;
     const anchored = r.atBottom <= 2;
+    // 「更多功能」面板关闭时必须整个在视口之外，不能露出任何一截
+    const panelHidden = r.panelTop >= r.inner - 1;
+    // 消息区不能伸进键盘区域
+    const msgInside = r.msgBottom <= r.inner - kb + 1;
     if (gap > 1 || !steady || !anchored) bad += 1;
+    if (!panelHidden || !msgInside) leaks += 1;
     if (i < 3 || i === STEPS || i === STEPS + 1 || i === rows.length - 1) {
-      console.log(`f${String(i).padStart(3)} kb=${r.kb.padStart(8)} box(h=${r.mainH},top=${r.mainTop}) msgH=${r.msgH} input.bottom=${r.inputBottom} expect=${r.inner - kb} panelLift=${r.panelLift} atBottom=${r.atBottom} ${gap > 1 ? 'INPUT-GAP ' : ''}${steady ? '' : 'BOX-MOVED '}${anchored ? '' : 'NOT-AT-BOTTOM'}`);
+      console.log(`f${String(i).padStart(3)} kb=${r.kb.padStart(8)} box(h=${r.mainH},top=${r.mainTop}) msgH=${r.msgH} msgBottom=${r.msgBottom} input.bottom=${r.inputBottom} expect=${r.inner - kb} panelTop=${r.panelTop} ${gap > 1 ? 'INPUT-GAP ' : ''}${steady ? '' : 'BOX-MOVED '}${anchored ? '' : 'NOT-AT-BOTTOM '}${panelHidden ? '' : 'PANEL-LEAK '}${msgInside ? '' : 'MSG-INTO-KB'}`);
     }
   });
 
@@ -146,13 +175,14 @@ const STEPS = 20;
   console.log(`\nSHELL android-shell=${base.shell} AndroidBridge=${base.bridge}`);
   console.log(`box steady: ${rows.every((r) => r.containerH === base.containerH && r.mainTop === base.mainTop && r.mainH === base.mainH) ? 'yes (viewport & wallpaper never move)' : 'NO'}`);
   console.log(`monotonic: ${nonMono === 0 ? 'yes (no bounce back)' : 'NO (' + nonMono + ' reversals)'}`);
-  console.log(bad === 0 && nonMono === 0 && jumpOk
-    ? `\n[PASS] ${rows.length} frames: input tracks keyboard exactly, wallpaper/container frozen, no bounce`
-    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals, jump=${jumpOk}`);
+  console.log(`no leak into keyboard area: ${leaks === 0 ? 'yes' : 'NO (' + leaks + ' frames leaked)'}`);
+  console.log(bad === 0 && nonMono === 0 && jumpOk && panelOk && leaks === 0
+    ? `\n[PASS] ${rows.length} frames: input tracks keyboard, wallpaper frozen, panel never leaks`
+    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals, jump=${jumpOk}, panel=${panelOk}, leaks=${leaks}`);
 
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(OUT, 'shot-chat-kb.png'), Buffer.from(shot.result.data, 'base64'));
 
   ws.close(); child.kill(); server.close();
-  process.exit(bad === 0 && nonMono === 0 && jumpOk ? 0 : 1);
+  process.exit(bad === 0 && nonMono === 0 && jumpOk && panelOk && leaks === 0 ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });

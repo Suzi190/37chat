@@ -124,8 +124,11 @@
             background-origin: border-box;
         }
 
-        /* 「更多功能」面板绝对定位在页面底部，同样要抬到键盘上方 */
-        html.android-shell #chat-actions-panel {
+        /* 「更多功能」面板：只有「打开」的时候才需要抬到键盘上方。
+           关闭态必须保持 bottom: 0 —— 它是靠 bottom: 0 + translateY(100%) 藏到视口外的，
+           一旦把 bottom 也抬成键盘高度，translateY(100%) 只推下自身 190px，
+           面板底边就卡在键盘顶边、整块内容露在页面里（键盘动画期间尤其明显）。 */
+        html.android-shell #page-chat.actions-panel-open #chat-actions-panel {
             bottom: var(--kb, 0px);
         }
 
