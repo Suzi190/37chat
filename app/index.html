@@ -14332,35 +14332,17 @@
             if (!kbState.raf) kbState.raf = requestAnimationFrame(kbStep);
         };
 
-        // 壳里（debug 包）键盘收起后在页面顶部打一行数字，用来判定「跳」到底出在哪一环：
-        // calls 多 + rev 0  = Java 每帧都给值、页面也平滑，画面还跳就是别的东西在动；
-        // rev > 0           = 送来的值本身在来回翻（已由序号+限速摊平，值为真实方向反转）；
-        // dropped > 0       = 有旧帧晚到（乱序），被丢掉了。
-        let kbDiagTimer = 0;
+        // 键盘统计只写 console（调试时看得到），界面上不画任何东西 ——
+        // 之前那条红条会盖住页面顶部，正常使用里非常碍眼，已经移除。
         function kbDiagReport() {
             if (!window.__kbDiagOn) return;
             const d = kbState;
             if (!d.calls) return;
-            if (!d.trace.length) {
-                // 没有真实动画轨迹（例如只推进了 0），不打扰
-                d.calls = 0; d.dropped = 0; d.rev = 0; d.maxJump = 0;
-                return;
+            if (d.trace.length && window.console && console.log) {
+                console.log('[kb] calls=' + d.calls + ' dropped=' + d.dropped
+                    + ' rev=' + d.rev + ' maxJump=' + Math.round(d.maxJump) + 'px'
+                    + ' trace=' + d.trace.join(' '));
             }
-            const head = 'kb diag  calls=' + d.calls + ' dropped=' + d.dropped
-                + ' rev=' + d.rev + ' maxJump=' + Math.round(d.maxJump) + 'px';
-            let el = document.getElementById('kb-diag');
-            if (!el) {
-                el = document.createElement('div');
-                el.id = 'kb-diag';
-                el.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483000;'
-                    + 'background:rgba(180,20,20,.94);color:#fff;font:11px/1.4 monospace;'
-                    + 'padding:6px 8px;white-space:pre-wrap;word-break:break-all;display:none;';
-                document.body.appendChild(el);
-            }
-            el.textContent = head + '\n' + 'trace: ' + d.trace.join(' ');
-            el.style.display = 'block';
-            clearTimeout(kbDiagTimer);
-            kbDiagTimer = setTimeout(() => { el.style.display = 'none'; }, 6000);
             d.calls = 0; d.dropped = 0; d.rev = 0; d.maxJump = 0; d.trace = [];
         }
 
