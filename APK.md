@@ -160,7 +160,40 @@ gradle assembleRelease    # 产物：android/app/build/outputs/apk/release/app-r
 
 3. 再次运行 workflow，`yunyue.apk` 就是正式签名包了。
 
-## 七、常见问题
+## 七、装上了但闪退 / 打不开怎么排查
+
+从 2026-11-13 的版本起，壳里加了三层兜底，正常情况下不该再出现「点开就闪退」：
+
+1. **启动期异常不再闪退**：`onCreate` 里的任何异常都会被 `showFatalError()` 接住，
+   直接把堆栈铺在屏幕上（可长按复制），并写进 `last-crash.txt`。
+   → 看到「云曰 启动失败」页面，把那段文字截图就能定位原因。
+2. **进程级崩溃下次可见**：未捕获异常会落盘，下次启动时在页面顶部显示一条红色横幅，
+   点一下关闭。
+3. **WebView 渲染进程崩溃自恢复**：`onRenderProcessGone()` 接管（默认行为会连累整个 App
+   被杀掉，用户看到的就是闪退），销毁旧 WebView 后重建并重新加载。
+4. **安全模式**：万一 `https://localhost` 被 ROM 拦截，会自动回退到
+   `file:///android_asset/www/index.html` 并提示「安全模式加载中」
+   （这个模式下 IndexedDB 不可用，只当兜底）。
+
+如果仍然直接闪退（连错误页都来不及显示），那就是进程级/native 崩溃，需要系统日志：
+
+```bash
+# 手机开 USB 调试，连电脑后
+adb logcat -b crash -d            # 只看崩溃
+adb logcat -d | findstr YunYue    # 看应用自己的日志（TAG = YunYue）
+```
+
+把 `FATAL EXCEPTION` 那一段发出来即可。
+
+另外两个常见「打不开」的误会：
+
+- **提示「应用未安装」**：说明签名冲突（不是闪退）。没配正式签名时，
+  GitHub Actions 每次跑都是全新的临时 debug 密钥，和上一次的包签名不同，不能覆盖安装。
+  解决：先卸载旧包，或者按第六节固定正式签名。
+- **想验证「是不是新包的问题」**：装 `yunyue-debug.apk`（包名 `com.yunyue.app.debug`），
+  它能和正式包共存，全新安装、互不影响。
+
+
 
 - **装不上 / 提示已存在同签名应用冲突**：debug 签名与正式签名不能共存，
   先卸载旧包（数据会丢，先导出备份）。

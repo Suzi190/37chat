@@ -131,10 +131,10 @@ public class MainActivity extends Activity {
             return insets;
         });
 
-        if (savedInstanceState == null) {
+        // restoreState 有可能返回 null（上一次没保存成功），这时必须重新 load，
+        // 否则会停在一片空白，用户看到的就是「打不开」
+        if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
             webView.loadUrl(START_URL);
-        } else {
-            webView.restoreState(savedInstanceState);
         }
 
         // 上一次启动留下的崩溃信息，直接铺在页面上（点一下关掉），方便截图反馈
@@ -302,11 +302,19 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (webView != null) {
-            webView.removeJavascriptInterface("AndroidBridge");
-            webView.setWebChromeClient(null);
-            webView.setWebViewClient(null);
-            webView.destroy();
+            WebView dying = webView;
             webView = null;
+            try {
+                if (rootView != null) {
+                    rootView.removeView(dying);
+                }
+                dying.removeJavascriptInterface("AndroidBridge");
+                dying.setWebChromeClient(null);
+                dying.setWebViewClient(null);
+                dying.destroy();
+            } catch (Throwable error) {
+                Log.w(TAG, "销毁 WebView 失败", error);
+            }
         }
         super.onDestroy();
     }
