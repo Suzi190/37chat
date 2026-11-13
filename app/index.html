@@ -333,6 +333,8 @@
             box-shadow: none;
         }
 
+        /* 主页图标：统一一块透明磨砂玻璃（不再按 app 上彩色）
+           半透明白 + 一层很淡的斜向高光，透出壁纸的柔光；图形统一浅灰 */
         .home-button .icon-wrapper {
             width: 60px;
             height: 60px;
@@ -341,13 +343,20 @@
             justify-content: center;
             align-items: center;
             margin-bottom: 0;
-            box-shadow: var(--shadow);
+            background-color: rgba(255, 255, 255, 0.3);
+            background-image: linear-gradient(150deg, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0.18) 100%);
+            -webkit-backdrop-filter: blur(14px) saturate(1.35);
+            backdrop-filter: blur(14px) saturate(1.35);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+                        0 4px 12px rgba(74, 78, 86, 0.1);
+            color: #98a0a8;
             transition: box-shadow 0.2s ease, background-color 0.2s, margin-bottom 0.2s ease;
             overflow: hidden;
         }
 
         .home-button i {
             font-size: 28px;
+            color: inherit;
         }
 
         .home-button .custom-icon-img {
@@ -357,7 +366,8 @@
         }
 
         .home-button:hover:not(.btn-placeholder) .icon-wrapper {
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.82),
+                        0 8px 18px rgba(74, 78, 86, 0.16);
         }
 
         .home-button span {
@@ -531,6 +541,8 @@
         .home-widget.hw-plain {
             background: none;
             box-shadow: none;
+            /* 不内衬：卡片直接铺满组件框，左右边缘落在第 1 格与最后 1 格的竖边上 */
+            padding: 0;
         }
 
         /* plain 组件不做圆角裁切：倾斜的卡片角不会被容器切掉（位移几何已保证不出格） */
@@ -708,7 +720,7 @@
             width: 100%;
             height: 100%;
             box-sizing: border-box;
-            padding: 10px 11px 9px;
+            padding: 9px 10px 8px;
             border-radius: 20px;
             overflow: hidden;
         }
@@ -874,7 +886,7 @@
             box-sizing: border-box;
             width: 100%;
             height: 100%;
-            padding: 10px;
+            padding: 9px;
             border-radius: 20px;
         }
 
@@ -1521,52 +1533,12 @@
             cursor: pointer;
         }
 
-        .btn-chat .icon-wrapper {
-            background-color: var(--primary-accent-color);
-        }
-
-        .btn-characters .icon-wrapper {
-            background-color: var(--secondary-accent-color);
-            color: white;
-        }
-
-        .btn-worldbooks .icon-wrapper {
-            background-color: #c9b7d0;
-            color: white;
-        }
-
-        .btn-settings .icon-wrapper {
-            background-color: var(--accent-color);
-        }
-
+        /* 主页图标统一走 .home-button .icon-wrapper 那一套透明磨砂玻璃，
+           原来这里按 app 各上一块彩色底（粉/蓝/紫/黄/绿/橙/靛/深灰），
+           一排放过去太花，已全部移除。占位按钮仍保留禁用样式。 */
         .btn-placeholder {
             cursor: not-allowed;
             opacity: 0.6;
-        }
-
-        .btn-store .icon-wrapper {
-            background-color: #65c3ba;
-            color: white;
-        }
-
-        .btn-community .icon-wrapper {
-            background-color: #f3a683;
-            color: white;
-        }
-
-        .btn-checkin .icon-wrapper {
-            background-color: #778beb;
-            color: white;
-        }
-
-        .btn-customize .icon-wrapper {
-            background-color: #57606f;
-            color: white;
-        }
-
-        .btn-wallet .icon-wrapper {
-            background-color: #778beb;
-            color: white;
         }
 
         #page-chat {
@@ -28953,7 +28925,7 @@ ${serializedHistory || '最近没有聊天记录。'}
             type: 'photo-single',
             name: '照片 · 单张',
             desc: '一张铺满卡片的照片 + 右上角日期，点照片就能换',
-            sizes: ['2x2'],
+            sizes: ['4x2', '2x2'],
             plain: true, // 磨砂玻璃底由组件自己画
             render(el, ctx) {
                 const root = document.createElement('div');
