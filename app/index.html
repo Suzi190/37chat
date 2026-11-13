@@ -14137,12 +14137,33 @@
     <style id="global-custom-css-style"></style>
     <script>
 
+        // 页面高度跟着「真正能看见的那块」走：
+        // 壳子是全屏的，键盘弹出时靠 Java 侧把 WebView 让出键盘高度，
+        // 这里再把 innerHeight / visualViewport 取小的那个写进 --app-height，
+        // 底部输入框才会被顶到键盘上方。
         const setAppHeight = () => {
             const doc = document.documentElement;
-            doc.style.setProperty('--app-height', `${window.innerHeight}px`);
+            const vv = window.visualViewport;
+            const vvH = (vv && vv.height) ? Math.round(vv.height) : 0;
+            const inner = Math.round(window.innerHeight) || vvH;
+            const h = vvH > 0 ? Math.min(vvH, inner) : inner;
+            doc.style.setProperty('--app-height', `${h}px`);
         };
         setAppHeight();
         window.addEventListener('resize', setAppHeight);
+        window.addEventListener('orientationchange', setAppHeight);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', setAppHeight);
+        }
+        // 键盘弹出/收起是段动画，中途量到的不是最终高度，动画结束再校两次
+        document.addEventListener('focusin', () => {
+            setTimeout(setAppHeight, 120);
+            setTimeout(setAppHeight, 420);
+        }, true);
+        document.addEventListener('focusout', () => {
+            setTimeout(setAppHeight, 120);
+            setTimeout(setAppHeight, 420);
+        }, true);
 
         const md = window.markdownit();
 
@@ -20883,6 +20904,10 @@ ${commonContext}`;
             setTimeout(() => {
                 scrollToBottom();
             }, 200);
+            // 键盘动画结束后再贴一次底：容器高度刚变过，早滚的话会停在中间
+            setTimeout(() => {
+                scrollToBottom();
+            }, 460);
         });
 
         const chatPage = document.getElementById('page-chat');

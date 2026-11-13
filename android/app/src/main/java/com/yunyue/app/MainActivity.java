@@ -78,6 +78,9 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> pendingFileCallback;
     private int topInsetPx = 0;
 
+    /** 软键盘顶起来的高度（px）：全屏壳不跟系统 resize，得自己把 WebView 让开 */
+    private int imeBottomPx = 0;
+
     /** 进程级崩溃兜底：只装一次，存下来给下次启动看 */
     private static Thread.UncaughtExceptionHandler previousCrashHandler;
 
@@ -128,6 +131,7 @@ public class MainActivity extends Activity {
                 topInsetPx = top;
                 pushSafeAreaToPage();
             }
+            applyImeInset(view, insets);
             return insets;
         });
 
@@ -245,6 +249,39 @@ public class MainActivity extends Activity {
             return bars.top;
         }
         return insets.getSystemWindowInsetTop();
+    }
+
+    /**
+     * 软键盘：壳子用的是 setDecorFitsSystemWindows(false)（全屏铺到挖孔/导航栏底下），
+     * 系统和 WebView 都不会替我们缩小窗口，manifest 里的 adjustResize 等于没生效，
+     * 键盘一弹就把底部输入框整块盖住。
+     * 这里手动把输入法高度做成 root 的底部内边距：
+     * WebView 真的变矮 → 页面 resize → window.innerHeight / --app-height 跟着变，
+     * 输入框自然抬到键盘上方。键盘收起时 insets 会再派发一次，padding 归零。
+     */
+    private void applyImeInset(View root, WindowInsets insets) {
+        int ime = imeBottomOf(insets);
+        if (ime == imeBottomPx) {
+            return;
+        }
+        imeBottomPx = ime;
+        if (root != null) {
+            root.setPadding(0, 0, 0, ime);
+        }
+    }
+
+    /** 取输入法高度；API 30 之前没有 ime() 类型，只能拿 systemWindowInsetBottom 兜底 */
+    private int imeBottomOf(WindowInsets insets) {
+        if (insets == null) {
+            return 0;
+        }
+        int ime;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            ime = insets.getInsets(WindowInsets.Type.ime()).bottom;
+        } else {
+            ime = insets.getSystemWindowInsetBottom();
+        }
+        return Math.max(0, ime);
     }
 
     /** 把刘海高度（dp）写进页面，页面用它给顶部模拟状态栏留白，内容就不会被挖孔挡住 */
