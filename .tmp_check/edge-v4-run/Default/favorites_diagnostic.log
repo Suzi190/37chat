@@ -1,0 +1,27 @@
+2026-11-13 08:40:35.949: [INFO] CurrentProfilePath: D:\37chat\.tmp_check\edge-v4-run\Default
+2026-11-13 08:40:35.949: [INFO] Profiles total count: 1
+2026-11-13 08:40:35.949: [INFO] Profile: name=用户配置 1 path=D:\37chat\.tmp_check\edge-v4-run\Default lastActive=null
+2026-11-13 08:40:35.949: [INFO] LastUsedProfileDir: D:\37chat\.tmp_check\edge-v4-run\Default
+2026-11-13 08:40:35.949: [INFO] VisibilityChanged: 0
+2026-11-13 08:40:35.976: [INFO] BookmarkNodeAdded, ABU: 0
+2026-11-13 08:40:35.976: [INFO] OnDoneLoading sync enabled: 0
+2026-11-13 08:40:35.976: [INFO] BookmarkModelLoaded, ids_reassigned: 0
+2026-11-13 08:40:35.976: [INFO] BookmarksLoadDropped droppedNodes=0
+2026-11-13 08:40:35.976: [INFO] BookmarksSnapshot Startup total=1 bar=1 other=0 mobile=0 showBar=0 showBarNTP=1
+2026-11-13 08:40:36.038: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 0
+2026-11-13 08:41:11.279: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 0
+2026-11-13 08:41:11.282: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 3
+2026-11-13 08:41:11.289: [INFO] Primary account changed.
+2026-11-13 08:41:11.289: [INFO] OnPrimaryAccountChanged PrimaryAccountChangeEvent::Type::kSet
+2026-11-13 08:41:11.298: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 3
+2026-11-13 08:41:11.310: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 3
+2026-11-13 08:48:32.793: [INFO] CurrentProfilePath: D:\37chat\.tmp_check\edge-v4-run\Default
+2026-11-13 08:48:32.793: [INFO] Profiles total count: 1
+2026-11-13 08:48:32.793: [INFO] Profile: name=个人 path=D:\37chat\.tmp_check\edge-v4-run\Default lastActive=2026-11-13T08:40:35.957Z
+2026-11-13 08:48:32.793: [INFO] LastUsedProfileDir: D:\37chat\.tmp_check\edge-v4-run\Default
+2026-11-13 08:48:32.793: [INFO] MostRecentlyActiveProfile: name=个人 path=D:\37chat\.tmp_check\edge-v4-run\Default lastActive=2026-11-13T08:40:35.957Z
+2026-11-13 08:48:32.793: [INFO] VisibilityChanged: 0
+2026-11-13 08:48:32.810: [INFO] OnDoneLoading sync enabled: 1
+2026-11-13 08:48:32.810: [INFO] BookmarkModelLoaded, ids_reassigned: 0
+2026-11-13 08:48:32.810: [INFO] BookmarksLoadDropped droppedNodes=0
+2026-11-13 08:48:32.810: [INFO] BookmarksSnapshot Startup total=1 bar=1 other=0 mobile=0 showBar=0 showBarNTP=1

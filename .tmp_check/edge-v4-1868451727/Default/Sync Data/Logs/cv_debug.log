@@ -1,0 +1,2 @@
+{"logTime": "1113/052852", "correlationVector":"Dl5cSsFIyW6xFcycNp71Aj.1","action":"SyncServerConnectionManagerRequest", "result":"SYNC_SERVER_OK", "context":{"environment":"Prod_japaneast_prod-s01-061-apac-japaneast", "migrationStage":"NotStarted", "server":"akswtt117000025"}}
+{"logTime": "1113/052853", "correlationVector":"Dl5cSsFIyW6xFcycNp71Aj.3","action":"SyncServerConnectionManagerRequest", "result":"SYNC_SERVER_ERROR", "context":{"environment":"", "error_type":"http_status_code", "error_value":"400", "migrationStage":"", "server":""}}

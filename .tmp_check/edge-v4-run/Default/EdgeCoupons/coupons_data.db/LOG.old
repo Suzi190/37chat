@@ -1,0 +1,5 @@
+2026/11/13-16:40:38.251 4dc0 Creating DB D:\37chat\.tmp_check\edge-v4-run\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/11/13-16:40:38.288 4dc0 Reusing MANIFEST D:\37chat\.tmp_check\edge-v4-run\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/11/13-16:41:47.117 e54 Level-0 table #5: started
+2026/11/13-16:41:47.120 e54 Level-0 table #5: 683284 bytes OK
+2026/11/13-16:41:47.123 e54 Delete type=0 #3

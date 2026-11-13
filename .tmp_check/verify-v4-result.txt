@@ -1,0 +1,49 @@
+PASS  部署版已是最新布局（version=4）  ->  version=4
+PASS  横幅回到原版 220px  ->  banner=220px
+PASS  头像回到原版 80px  ->  avatar=80px
+PASS  昵称回到原版 1.4rem  ->  font=22.4/22.4
+PASS  图标 60px + 4 列对齐  ->  icon=60 lefts=25/124/223/321
+PASS  图标行与资料卡间距 ≈ 40px  ->  gap=40
+PASS  默认 1 页 8 图标且无重叠  ->  pages=1 apps=8
+PASS  长按进入编辑并可拖动  ->  editing=true cleaned=true
+PASS  拖到第 3 行松手吸附到整格 (0,2)  ->  x=0 y=2
+PASS  放置后所有图标仍无重叠
+PASS  拖回第 1 格吸附 (0,0)  ->  x=0 y=0
+PASS  原占位图标让位（不是交换）  ->  mid=characters after=chat
+PASS  让位后图标一个不少  ->  items=8
+PASS  可放到第 4 行（行数不设上限）  ->  x=3 y=3
+PASS  画布随内容自动增高  ->  scrollHeight=882
+PASS  刷新后坐标保持不变 (3,3)  ->  x=3 y=3
+PASS  坐标全部为整数格  ->  version=4
+PASS  拖到右边缘停住可自动翻页  ->  scrolled=1
+PASS  跨页拖放成功（图标搬到第 2 页）  ->  p0=false p1=true
+PASS  跨页后图标总数不变  ->  apps=8
+PASS  320px 宽仍是 60px 图标 + 4 列  ->  icon=60 lefts=25/96/168/239
+PASS  320px 宽无横向溢出  ->  overflowX=false
+PASS  重置后桌面没有任何小组件（新组件不会自动上桌面）  ->  widgets=0
+PASS  「添加小组件」面板里出现六个新组件  ->  polaroid-duo/polaroid-trio/little-joys/photo-single/diary-calendar/note-chat/example-clock
+PASS  面板尺寸选项为 2×2 / 4×2 / 4×4 / 4×2 / 2×2 / 4×1  ->  duo=2×2 trio=4×2 cal=4×4 joys=4×2 photo=2×2 note=4×1
+PASS  点面板尺寸按钮即可把六个组件分别加到六页  ->  [{"ok":true},{"ok":true},{"ok":true},{"ok":true},{"ok":true},{"ok":true}]
+PASS  2×2 拍立得：尺寸 2 列 2 行 + 两张卡片  ->  cls=home-widget hw-size-2x2 hw-plain h=185 cards=2
+PASS  4×2 拍立得：整行宽 + 三张卡片  ->  cls=home-widget hw-size-4x2 hw-plain w=380 cards=3
+PASS  4×4 大组件：占满 4 列 4 行（785 高 385）  ->  cls=home-widget hw-size-4x4 hw-plain w=380 h=385
+PASS  4×4 右侧是日历：7 列日期 + 今天高亮 + 左列图片位  ->  right=true dates=14 today=1 slots=5
+PASS  4×4 日历含时间/电量/存储信息条  ->  Date: 11-13 | Battery: 53% | Time: 16:49 | Storage: 1%
+PASS  六个组件都写进布局且尺寸正确  ->  2x2;4x2;4x4;4x2;2x2;4x1
+PASS  组件内容不溢出容器  ->  duo=false trio=false cal=false joy=false photo=false note=false
+PASS  两个拍立得外层透明（没有白色底板/阴影）  ->  duo=rgba(0, 0, 0, 0)/none trio=rgba(0, 0, 0, 0)/none
+PASS  手帐日历也改成自己画的玻璃卡（外层不再有白底板）  ->  plain=true bg=rgba(0, 0, 0, 0) shadow=none
+PASS  小确幸 / 手帐日历 / 照片 / 小纸条都是无色磨砂玻璃（无色偏 + 模糊 + 深色字）  ->  joy[255/255/255/0.54 255/255/255/0.26 | blur(20px) saturate(1.2) | lum=47]  cal[255/255/255/0.54 255/255/255/0.26 | blur(20px) saturate(1.2) | lum=75]  photo[255/255/255/0.54 255/255/255/0.26 | blur(20px) saturate(1.2) | lum=54]  note[255/255/255/0.54 255/255/255/0.26 | blur(20px) saturate(1.2) | lum=67]
+PASS  2×2 照片：卡片内铺满图片位 + 日期小牌 + 空态提示  ->  h=185 slots=1 fills=true stamp="11/13 周五" hint="点一下放照片"
+PASS  拍立得卡片是竖长方形（高/宽 ≥ 1.3）且旋转后不出容器  ->  86x129=1.5  86x129=1.5  93x139=1.49  103x152=1.48  93x139=1.49
+PASS  4×2 小确幸：整行宽 + 三张方图 + 标题/副标题 + 圆形按钮  ->  w=380 h=185 slots=3 title="Little joys" sub="Make every day count." action=1
+PASS  小确幸是半透明毛玻璃卡（透出壁纸）+ 第一格点阵 + 三格近正方形  ->  blur=blur(20px) saturate(1.2) fits=true slots=105x108 105x108 105x108
+PASS  小确幸右下角圈子点一下换一句并写进布局  ->  Make every day count. -> Small things, big days. (noteIndex=1)
+PASS  图片位可换图（写入 dataURL 后渲染为 img 并留在布局里）  ->  hasPhoto=true imgs=1 persisted=true
+PASS  照片组件换图后铺满卡片并隐藏空态提示  ->  {"hasPhoto":true,"imgs":1,"hintHidden":true}
+PASS  4×1 小纸条：整行药丸气泡 + 头像压住气泡两端 + 居中小字  ->  w=380 h=85 slots=2 avatars=31/31 overlap=true pill=true/true bubbles=["˚₊ ♡ 私たちの永遠の幸福 @Avery ♡ ₊˚","˚₊ ♡ I love you #Evan .♡ ♡ ₊˚"] fits=true inside=true
+PASS  点气泡弹出无色磨砂玻璃改字层（预填当前字）→ 确定后写回布局并重渲染  ->  prefill="˚₊ ♡ 私たちの永遠の幸福 @Avery ♡ ₊˚" closed=true after="今天也要好好吃饭呀" saved="今天也要好好吃饭呀" glass=true/blur(20px) saturate(1.2)
+PASS  改字层按 Esc 取消：不写入布局  ->  {"closed":true,"text":"˚₊ ♡ I love you #Evan .♡ ♡ ₊˚"}
+PASS  无 JS 报错
+
+==== 47/47 通过 ====

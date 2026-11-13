@@ -1,0 +1,17 @@
+2026-11-13 05:25:58.157: [INFO] CurrentProfilePath: D:\37chat\.tmp_check\edge-v4-384438319\Default
+2026-11-13 05:25:58.157: [INFO] Profiles total count: 1
+2026-11-13 05:25:58.157: [INFO] Profile: name=用户配置 1 path=D:\37chat\.tmp_check\edge-v4-384438319\Default lastActive=null
+2026-11-13 05:25:58.157: [INFO] LastUsedProfileDir: D:\37chat\.tmp_check\edge-v4-384438319\Default
+2026-11-13 05:25:58.157: [INFO] VisibilityChanged: 0
+2026-11-13 05:25:58.185: [INFO] BookmarkNodeAdded, ABU: 0
+2026-11-13 05:25:58.185: [INFO] OnDoneLoading sync enabled: 0
+2026-11-13 05:25:58.185: [INFO] BookmarkModelLoaded, ids_reassigned: 0
+2026-11-13 05:25:58.185: [INFO] BookmarksLoadDropped droppedNodes=0
+2026-11-13 05:25:58.185: [INFO] BookmarksSnapshot Startup total=1 bar=1 other=0 mobile=0 showBar=0 showBarNTP=1
+2026-11-13 05:25:58.232: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 0
+2026-11-13 05:26:49.235: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 0
+2026-11-13 05:26:49.239: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 3
+2026-11-13 05:26:49.243: [INFO] Primary account changed.
+2026-11-13 05:26:49.243: [INFO] OnPrimaryAccountChanged PrimaryAccountChangeEvent::Type::kSet
+2026-11-13 05:26:49.249: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 3
+2026-11-13 05:26:49.264: [INFO] RecordSyncInitDuration has_sync_been_enabled: 0 state: 3

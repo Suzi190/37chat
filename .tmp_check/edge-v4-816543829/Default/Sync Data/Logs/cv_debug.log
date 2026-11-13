@@ -1,0 +1,1 @@
+{"logTime": "1113/055904", "correlationVector":"G8xRWPdktp9i557fkfLeuu.0","action":"SyncServerConnectionManagerRequest", "result":"SYNC_SERVER_ERROR", "context":{"environment":"", "error_type":"http_status_code", "error_value":"503", "migrationStage":"", "server":""}}
