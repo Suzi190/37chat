@@ -182,6 +182,20 @@ public class MainActivity extends Activity {
         view.addJavascriptInterface(new Bridge(), "AndroidBridge");
         view.setWebViewClient(new AppWebViewClient());
         view.setWebChromeClient(new AppChromeClient());
+        // 键盘高度只由 Activity 这一层的 root 底部 padding 决定（见 applyImeInset）。
+        // 但 WindowInsets 还会继续往子 View 派发，WebView 内部的 Chromium 收到 ime inset 后
+        // 会按「键盘占了多高」自己去缩可视区，还会把聚焦的输入框滚进可视区；
+        // 和外面逐帧变化的 padding 一叠加，页面就被两套逻辑来回拉扯 ——
+        // 输入框、壁纸上下乱跳就是这么来的。这里把 ime 这一项对 WebView 藏起来。
+        view.setOnApplyWindowInsetsListener((v, insets) -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                return new WindowInsets.Builder(insets)
+                        .setInsets(WindowInsets.Type.ime(), Insets.NONE)
+                        .build();
+            }
+            // Android 10 及更早没有 insets 动画，键盘一次性弹出，保持原行为最稳
+            return insets;
+        });
         view.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
             if (url == null || url.startsWith("blob:")) {
                 // blob: 交给页面里的 JS 桥接处理（见 app/index.html 末尾的适配脚本）
@@ -278,8 +292,8 @@ public class MainActivity extends Activity {
      * 系统和 WebView 都不会替我们缩小窗口，manifest 里的 adjustResize 等于没生效，
      * 键盘一弹就把底部输入框整块盖住。
      * 这里手动把输入法高度做成 root 的底部内边距：
-     * WebView 真的变矮 → 页面 resize → window.innerHeight / --app-height 跟着变，
-     * 输入框自然抬到键盘上方。键盘收起时 insets 会再派发一次，padding 归零。
+     * WebView 真的变矮 → 视口跟着变矮 → 页面（html.android-shell .app-container 用的是 100%）
+     * 在同一次布局里就跟上了，输入框自然停在键盘上方。键盘收起时 padding 归零。
      */
     private void applyImeInset(View root, WindowInsets insets) {
         int ime = imeBottomOf(insets);

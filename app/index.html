@@ -101,6 +101,14 @@
             }
         }
 
+        /* App 壳里：容器高度直接用 100% 绑视口（html / body 本来就是 100%）。
+           键盘弹出时 Java 会逐帧把 WebView 抬起，这个百分比和视口在同一次布局里算好，
+           不会出现「容器比视口慢一两帧」。之前用 JS 写 --app-height，
+           变量要等 resize → rAF 才更新，键盘动画期间两套高度互相追，输入框和壁纸才会上下抖。 */
+        html.android-shell .app-container {
+            height: 100%;
+        }
+
         .status-bar {
             width: 100%;
             /* 安卓壳：刘海 / 挖孔高度写进 --android-inset-top（Java 侧注入），
@@ -14137,19 +14145,38 @@
     <style id="global-custom-css-style"></style>
     <script>
 
-        // 页面高度跟着「真正能看见的那块」走：
-        // 键盘升降由 Java 侧逐帧同步成 WebView 尺寸，这里只用 rAF 节流跟着更新 --app-height，
-        // 一帧只算一次，既不打断键盘动画的节奏，也不会白跑重排。
+        // —— 页面高度 ——
+        // App 壳里（能拿到 AndroidBridge）完全不跑 JS 高度计算：
+        // CSS 的 100%（见 html.android-shell .app-container）直接跟着视口走，
+        // 键盘逐帧抬起 WebView 时，它在同一帧里就算好了，不会「容器比视口慢一拍」。
+        // 之前在壳里用 --app-height，变量要等 resize → rAF，键盘动画期间容器高度一直追不上视口，
+        // 表现就是输入框和壁纸上下乱跳 —— 所以壳里必须交给 CSS。
+        // 普通浏览器（没有壳）才用 JS 算可视高度，避免手机浏览器地址栏抽动把底部挡住。
+        const inAppShell = typeof window.AndroidBridge !== 'undefined';
+        if (inAppShell) {
+            // Java 侧 onPageFinished 才补这个类，先自己打上，首屏就按壳里的高度规则走
+            document.documentElement.classList.add('android-shell');
+        }
         const keepChatScrollAtBottom = () => {
             const box = document.getElementById('chat-messages');
             if (!box) return;
-            // 只有原本贴着底（或离底很近）才跟着键盘走；用户正在翻历史时别抢滚动条
+            // 只跟「原本贴着底」的情况；用户正在翻历史时别抢滚动条
             if (box.scrollHeight - box.scrollTop - box.clientHeight <= 160) {
-                box.scrollTop = box.scrollHeight;
+                const target = box.scrollHeight;
+                if (box.scrollTop !== target) {
+                    box.scrollTop = target;
+                }
             }
         };
         let appHeightFrame = 0;
         const applyAppHeight = () => {
+            // 每次都以「现在有没有 android-shell 类」为准，而不是启动时判一次：
+            // 类由 Java 在 onPageFinished 补上，补上之后这里就只负责聊天区贴底，
+            // 高度全部交给 CSS 的 100%（见 html.android-shell .app-container）。
+            if (document.documentElement.classList.contains('android-shell')) {
+                keepChatScrollAtBottom();
+                return;
+            }
             const doc = document.documentElement;
             const vv = window.visualViewport;
             const vvH = (vv && vv.height) ? Math.round(vv.height) : 0;
