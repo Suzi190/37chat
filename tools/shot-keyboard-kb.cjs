@@ -195,7 +195,7 @@ const STEPS = 20;
 
   // 鐪熸満鍏ㄩ潰灞忔湁 env(safe-area-inset-bottom)锛堢害 34px锛夛紝headless 閲屾亽涓?0锛?
   // 鐢ㄤ竴鏉′綆浼樺厛绾х殑瑙勫垯鎶婂畠妯℃嫙鍑烘潵锛氶敭鐩樺脊璧锋椂杩欐鐣欑櫧蹇呴』璁╃粰閿洏锛屽惁鍒欒緭鍏ユ鎮┖涓€鏉＄紳銆?
-  await send('Runtime.evaluate', { expression: `(()=>{const s=document.createElement('style');s.id='test-safe-area';s.textContent='html.android-shell .chat-input-area{padding-bottom:44px;}';document.head.appendChild(s);})();` });
+  await send('Runtime.evaluate', { expression: `document.documentElement.style.setProperty('--kb-safe-area','44px');` });
   const padOf = async () => {
     const r = await send('Runtime.evaluate', { returnByValue: true, expression: `(()=>{const e=document.querySelector('#page-chat .chat-input-area');return JSON.stringify({pad: Math.round(parseFloat(getComputedStyle(e).paddingBottom)), kbOpen: document.documentElement.classList.contains('kb-open')});})()` });
     return JSON.parse(r.result.result.value);
@@ -204,10 +204,15 @@ const STEPS = 20;
   const padClosed = await padOf();
   await setKb(KB_MAX);
   const padOpen = await padOf();
-  await send('Runtime.evaluate', { expression: `document.getElementById('test-safe-area').remove();` });
+  // 中间值：二值开关（kb-open）会给 10px，连续公式给 10 + (44-20) = 34px。
+  // 差 24px 就是「键盘刚弹出 1px、输入框先跳 34px」的那个跳变，必须测出来。
+  await setKb(20);
+  const padMid = await padOf();
+  await send('Runtime.evaluate', { expression: `document.documentElement.style.removeProperty('--kb-safe-area');` });
   await setKb(0);
-  const safeOk = Math.abs(padClosed.pad - 44) <= 1 && Math.abs(padOpen.pad - 10) <= 1 && padOpen.kbOpen === true;
-  console.log(`safe-area: kb=0 pad=${padClosed.pad}(expect 44)  kb=${KB_MAX} pad=${padOpen.pad}(expect 10)  kb-open=${padOpen.kbOpen} ${safeOk ? 'OK' : 'FAIL'}`);
+  const safeOk = Math.abs(padClosed.pad - 54) <= 1 && Math.abs(padOpen.pad - 10) <= 1
+    && Math.abs(padMid.pad - 34) <= 1;
+  console.log(`safe-area: kb=0 pad=${padClosed.pad}(expect 54)  kb=${KB_MAX} pad=${padOpen.pad}(expect 10)  kb=20 pad=${padMid.pad}(expect 34, 连续不吃 34px 跳变) ${safeOk ? 'OK' : 'FAIL'}`);
 
   // ---- 闈炶亰澶╅〉锛堣〃鍗?/ 缂栬緫 / 璇勮锛夊拰寮圭獥锛氶敭鐩樺脊鍑烘椂蹇呴』璁╁嚭閿洏楂樺害锛屽埆鎶婅緭鍏ユ鐩栦綇 ----
   await send('Runtime.evaluate', { expression: `(()=>{

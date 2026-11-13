@@ -132,10 +132,13 @@
             bottom: var(--kb, 0px);
         }
 
-        /* 键盘弹起时，底部导航条那截已经被键盘盖住了，输入栏不该再给 safe-area 留位，
-           否则输入框会悬在键盘上方一条几十 px 的缝（全面屏上特别明显）。 */
-        html.android-shell.kb-open .chat-input-area {
-            padding-bottom: 10px;
+        /* 输入栏底部的 safe-area 留白必须随键盘「连续」让位，不能做成二值开关：
+           全面屏上 env 是 34px，写成「kb 一超过 0.5 就跳到 10px」的话，键盘刚弹出
+           1px 的那一帧输入栏就被抬高 34px，看起来是「输入框先跳一下、再跟键盘走」。
+           这里用 max(0, 安全区 - 键盘高度)：键盘越高留白越小，全程连续。
+           --kb-safe-area 是给测试注入用的，真机走 env(safe-area-inset-bottom) 回退。 */
+        html.android-shell .chat-input-area {
+            padding-bottom: calc(10px + max(0px, var(--kb-safe-area, env(safe-area-inset-bottom, 0px)) - var(--kb, 0px)));
         }
 
         /* 「更多功能」面板贴着键盘顶边时，底部同样不需要安全区留白。 */
@@ -14235,7 +14238,7 @@
         //   2. 部分 ROM 的 onProgress 会给出突跳值（一帧从 0 到 344），看起来就是「闪一下」。
         //      所以真正写进 CSS 的值由 rAF 逐帧逼近目标，单帧位移不超过 dt*4px。
         const kbState = {
-            seq: -1, target: 0, shown: 0, dir: 0, raf: 0, t: 0,
+            seq: -1, target: 0, shown: 0, dir: 0, raf: 0, t: 0, had: false,
             calls: 0, dropped: 0, rev: 0, maxJump: 0, trace: []
         };
 
@@ -14268,12 +14271,16 @@
                     kbState.shown = kbState.target;
                     kbWrite(kbState.shown);
                 }
-                if (kbState.shown === 0) kbDiagReport();
+                if (kbState.shown === 0 && kbState.had) {
+                    kbState.had = false;
+                    kbDiagReport();
+                }
                 return;
             }
-            // 每毫秒 4px 的上限：16ms 一帧最多 64px。真实键盘动画 250ms 走 344px 约 22px/帧，
-            // 跟手完全不受影响；但任何突跳/乱序都会被摊成几帧，屏幕上不再有「闪」。
-            const maxStep = Math.max(8, dt * 4);
+            // 单帧位移上限必须是个定值：写成 dt*4 的话，rAF 一掉帧 dt 就变大，
+            // 步子反而更大（真机上抓到过 dt=32 → 一帧走 128px，屏幕上就是「啪」地跳一下）。
+            // 40px/帧：真实键盘动画约 22px/帧，够用不滞后；突跳最多被摊成 9 帧（约 150ms）。
+            const maxStep = Math.max(8, Math.min(40, dt * 4));
             const before = kbState.shown;
             kbState.shown += Math.sign(gap) * Math.min(Math.abs(gap), maxStep);
             const dir = Math.sign(kbState.shown - before);
@@ -14303,6 +14310,11 @@
             if (!window.__kbDiagOn) return;
             const d = kbState;
             if (!d.calls) return;
+            if (!d.trace.length) {
+                // 没有真实动画轨迹（例如只推进了 0），不打扰
+                d.calls = 0; d.dropped = 0; d.rev = 0; d.maxJump = 0;
+                return;
+            }
             const head = 'kb diag  calls=' + d.calls + ' dropped=' + d.dropped
                 + ' rev=' + d.rev + ' maxJump=' + Math.round(d.maxJump) + 'px';
             let el = document.getElementById('kb-diag');
@@ -14330,6 +14342,7 @@
                 kbState.seq = s;
             }
             kbState.target = px;
+            if (px > 0.5) kbState.had = true;
             kbKick();
         };
         const applyAppHeight = () => {
