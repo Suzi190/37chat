@@ -120,8 +120,11 @@ async function main() {
   let cdpPort = null;
   for (let i = 0; i < 80; i += 1) {
     if (fs.existsSync(portFile)) {
-      const first = fs.readFileSync(portFile, 'utf8').split('\n')[0].trim();
-      if (first) { cdpPort = first; break; }
+      // Windows 上这个文件刚写出来时会被浏览器短暂锁住，读失败就多试几次
+      try {
+        const first = fs.readFileSync(portFile, 'utf8').split('\n')[0].trim();
+        if (first) { cdpPort = first; break; }
+      } catch (error) { /* 文件还在被占用，下一轮再读 */ }
     }
     await sleep(250);
   }

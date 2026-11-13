@@ -5,9 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-title" content="37Chat">
+    <meta name="apple-mobile-web-app-title" content="云曰">
     <link rel="apple-touch-icon" href="https://i.postimg.cc/TwpCzsDJ/1761917231761-edit-27267794691671.jpg">
-    <title>37Chat</title>
+    <title>云曰</title>
     <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
     <script src="vendor/markdown-it.min.js"></script>
     <script src="vendor/dexie.min.js"></script>
@@ -90,6 +90,20 @@
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+
+        /* ===== 安卓壳：刘海区当成页面的一部分，不再是顶部一条白条 =====
+           壳里系统状态栏已经沉浸式隐藏，这条若还铺 --header-bg-color，
+           刘海区就是一块纯白（跟下面的页面底色对不上，看着像没全屏）。
+           改成透明 → 直接露出 .app-container 的页面底色，时间/电量照常显示在上面。 */
+        html.android-shell .status-bar {
+            background-color: transparent;
+            background-image: none;
+            height: calc(20px + var(--android-inset-top, env(safe-area-inset-top, 0px)));
+            padding: var(--android-inset-top, env(safe-area-inset-top, 0px)) 15px 0;
+            align-items: center;
+            color: var(--text-color);
+            opacity: 0.72;
         }
 
         #status-bar-battery {
@@ -559,7 +573,8 @@
         .hwp-card {
             position: absolute;
             box-sizing: border-box;
-            padding: 4px 4px 22px;
+            /* 底部白边按卡片宽度自适应，卡片被压窄时不会只剩一条缝 */
+            padding: 4px 4px 20%;
             border-radius: 2px;
             background: #fff;
             box-shadow: 0 3px 9px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.1);
@@ -570,49 +585,50 @@
             height: 100%;
         }
 
-        /* 卡片比例按拍立得来：竖长方形，底部留一条宽白边 */
+        /* 卡片比例按拍立得来：竖长方形，底部留一条宽白边。
+           宽度要给足——手机上小组件容器本来就窄，26% 会被压成细长条。 */
         .hwpl-2x2 .hwp-card {
-            width: 54%;
-            height: 78%;
+            width: 62%;
+            height: 74%;
         }
 
         .hwpl-2x2 .hwp-card-1 {
-            left: 7%;
-            top: 5%;
-            transform: rotate(-8deg);
+            left: 3%;
+            top: 7%;
+            transform: rotate(-6deg);
         }
 
         .hwpl-2x2 .hwp-card-2 {
-            right: 6%;
-            bottom: 5%;
-            transform: rotate(5deg);
+            right: 3%;
+            bottom: 7%;
+            transform: rotate(4deg);
             z-index: 2;
         }
 
         .hwpl-4x2 .hwp-card {
-            width: 26%;
-            height: 84%;
+            width: 30%;
+            height: 76%;
         }
 
         .hwpl-4x2 .hwp-card-1 {
-            left: 4%;
-            top: 7%;
-            transform: rotate(-8deg);
+            left: 2.5%;
+            top: 8%;
+            transform: rotate(-6deg);
         }
 
         .hwpl-4x2 .hwp-card-2 {
             left: 34.5%;
-            top: 2%;
-            width: 29%;
-            height: 92%;
-            transform: rotate(2deg);
+            top: 3%;
+            width: 31%;
+            height: 86%;
+            transform: rotate(1.5deg);
             z-index: 3;
         }
 
         .hwpl-4x2 .hwp-card-3 {
-            right: 4%;
-            top: 9%;
-            transform: rotate(8deg);
+            right: 2.5%;
+            top: 8%;
+            transform: rotate(6deg);
         }
 
         .hwp-caption {

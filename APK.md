@@ -89,6 +89,15 @@ gradle assembleRelease    # 产物：android/app/build/outputs/apk/release/app-r
   以 dp 写进页面变量 `--android-inset-top`；
   页面顶部那条模拟状态栏（`.status-bar`）用它做上内边距，
   所以内容铺满整个屏幕，但时间/电量文字不会被挖孔挡住。
+- **刘海区不再是「一条白条」**：壳里系统状态栏已经隐藏，
+  如果页面那条还铺 `--header-bg-color`（纯白），刘海区就是一块白底、跟页面底色对不上，
+  看起来就像没全屏。所以 Java 侧在 `onPageFinished` 和刘海高度变化时都会注入
+  `document.documentElement.classList.add('android-shell')`，
+  页面 CSS 用 `html.android-shell .status-bar` 把它改成**透明、只留 20px 显示时间/电量**，
+  露出来的就是页面自己的底色 —— 刘海区等于被页面用起来了。
+  浏览器里打开（没有这个 class）仍然是原来那条带白底的模拟状态栏。
+- 启动瞬间的窗口底色 `window_background` / `rootView` 背景都改成页面的 `#FDF6F7`，
+  不再先黑一下再变浅色。
 - 键盘弹出时：viewport 里补了 `interactive-widget=resizes-content`，
   布局视口会跟着缩小，聊天输入框不会被键盘顶住。
 
@@ -122,14 +131,30 @@ gradle assembleRelease    # 产物：android/app/build/outputs/apk/release/app-r
 - 名字：`android/app/src/main/res/values/strings.xml` 里的 `app_name`，
   同时打包时会替换网页 `<title>` 与 `apple-mobile-web-app-title`。
   包名仍是 `com.yunyue.app`（与旧版不同，所以属于「新装」而不是覆盖升级）。
-- 图标：`tools/make-icons.ps1` 从根目录 `icon.jpg` 生成
-  - `mipmap-*/ic_launcher.png`：Android 7 及以下的圆角方形图标
-  - `mipmap-*/ic_launcher_round.png`：圆形启动器图标
-  - `mipmap-*/ic_launcher_foreground.png`：Android 8+ 自适应图标前景
-    （108dp 画布、主体占 80%，圆形/方形/水滴遮罩都不会切到主体）
-  - `mipmap-anydpi-v26/ic_launcher*.xml`：自适应图标声明，底色 `#0E0C0A`
-- 换图标：替换根目录 `icon.jpg` 后执行
-  `powershell -ExecutionPolicy Bypass -File tools\make-icons.ps1`，再提交即可。
+- 图标：`tools/make-launcher-icon.mjs`（从 `tools/launcher-source.png` 生成）
+  - `mipmap-*/ic_launcher_background.png`：**无色磨砂玻璃**底（浅白渐变 + 细颗粒 + 柔光 + 边缘亮线），
+    不透明的，避免半透明底色被启动器垫成灰块
+  - `mipmap-*/ic_launcher_foreground.png`：中央嵌一枚圆形插画徽章（直径 60%，落在自适应图标安全区内），
+    四周是透明的，露出底下的玻璃
+  - `mipmap-*/ic_launcher.png` / `ic_launcher_round.png`：Android 7 及以下的圆角方 / 圆形图标
+  - `mipmap-anydpi-v26/ic_launcher*.xml`：自适应图标声明，
+    `background` 指向 `@mipmap/ic_launcher_background`（不是纯色了），`foreground` 指向徽章
+- **为什么以前换图标「没变化」**（踩过的坑，写在这里免得再踩）：
+  Android 8.0+ 的桌面只认 `mipmap-anydpi-v26/ic_launcher.xml` 这一份「自适应图标」。
+  - 只替换 `ic_launcher.png` → 8.0+ 根本不读，看起来毫无变化；
+  - 只改 `colors.xml` 里的 `ic_launcher_background` 颜色 → 前景 PNG 自带一层黑底，把底色整块盖住，
+    同样看不出变化；
+  - 直接跑 `make-icons.ps1` 把 `icon.jpg` 整幅缩成前景 → 整幅是不透明方图，既露直角、也顶掉了背景色。
+  所以现在改成「玻璃底（背景图）+ 圆形徽章（前景，透明边）」两层，
+  前景不遮背景，换哪一层都能立刻看出来。
+- 换图 / 换色：
+  ```powershell
+  # 换插画：替换 tools/launcher-source.png 后
+  node tools\make-launcher-icon.mjs
+  # 顺手把徽章换成别的配色（默认保留原插画的米金色）
+  node tools\make-launcher-icon.mjs --tint=#3B5B7A
+  ```
+  原始图标自动备份在 `.icon-backup/`，随时可以复制回 `res/` 回滚。
 
 ## 五、为什么不直接用 `file://` 打开网页
 

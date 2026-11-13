@@ -112,7 +112,7 @@ public class MainActivity extends Activity {
 
         FrameLayout root = new FrameLayout(this);
         rootView = root;
-        root.setBackgroundColor(0xFF0E0C0A);
+        root.setBackgroundColor(0xFFFDF6F7);
 
         webView = buildWebView();
         root.addView(webView, new FrameLayout.LayoutParams(
@@ -249,7 +249,16 @@ public class MainActivity extends Activity {
 
     /** 把刘海高度（dp）写进页面，页面用它给顶部模拟状态栏留白，内容就不会被挖孔挡住 */
     private void pushSafeAreaToPage() {
-        if (webView == null) {
+        applyPageShellFlags(webView);
+    }
+
+    /**
+     * 给页面打上「在 App 壳里跑」的标记，并同步刘海高度。
+     * 页面 CSS 靠 html.android-shell 决定顶部那条是铺白底还是透明，
+     * 所以每次加载完都要补一次（没有刘海的机器 topInsetPx 是 0，不会走上面的监听）。
+     */
+    private void applyPageShellFlags(WebView view) {
+        if (view == null) {
             return;
         }
         float density = getResources().getDisplayMetrics().density;
@@ -257,9 +266,11 @@ public class MainActivity extends Activity {
             density = 1f;
         }
         String dp = String.format(Locale.US, "%.2f", topInsetPx / density);
-        String js = "(function(){try{document.documentElement.style.setProperty('--android-inset-top','"
-                + dp + "px');}catch(e){}})();";
-        webView.evaluateJavascript(js, null);
+        String js = "(function(){try{var r=document.documentElement;"
+                + "r.classList.add('android-shell');"
+                + "r.style.setProperty('--android-inset-top','" + dp + "px');"
+                + "}catch(e){}})();";
+        view.evaluateJavascript(js, null);
     }
 
     /**
@@ -498,6 +509,13 @@ public class MainActivity extends Activity {
                 return true;
             }
             return true;
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            // 页面每次加载完都补一次壳标记：顶部那条要不要铺白底全靠这个 class
+            applyPageShellFlags(view);
         }
 
         @Override
