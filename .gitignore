@@ -19,6 +19,7 @@ dist/
 .DS_Store
 Thumbs.db
 node_modules/
+.vscode/
 
 # 图标原图备份（tools/make-launcher-icon.mjs 自动生成，供回滚用，不进仓库）
 .icon-backup/

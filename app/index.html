@@ -13,7 +13,13 @@
     <script src="vendor/dexie.min.js"></script>
     <style>
         :root {
-            --bg-color: #fdf6f7;
+            /* ===== 磨砂玻璃主题 =====
+               页面底色是一层「半透明白」，叠在 body 的柔光层上就成了一块磨砂玻璃；
+               不透明度太低会糊成一片，太高就看不到背后的光，0.56 是肉眼刚好的位置。 */
+            --bg-color: rgba(255, 255, 255, 0.56);
+            --bg-base: #eceef1;
+            --glass-blur: blur(20px) saturate(1.45);
+            --glass-line: rgba(255, 255, 255, 0.62);
             --primary-color: #f7cac9;
             --secondary-color: #92a8d1;
             --accent-color: #f7d9aa;
@@ -21,7 +27,8 @@
             --light-gray: #f0f0f0;
             --white: #ffffff;
 
-            --header-bg-color: var(--white);
+            /* 顶栏/底栏也做成玻璃：半透明白 + 模糊 */
+            --header-bg-color: rgba(255, 255, 255, 0.68);
             --primary-accent-color: var(--primary-color);
             --secondary-accent-color: var(--secondary-color);
 
@@ -46,9 +53,32 @@
         body {
             height: 100%;
             font-family: var(--font-family);
-            background-color: var(--light-gray);
+            /* 磨砂玻璃的「背后」：浅灰底 + 几团很淡的柔光。
+               玻璃片本身是半透明白，透上来才有层次，不然就是一块死白。 */
+            background-color: var(--bg-base);
+            background-image:
+                radial-gradient(58% 42% at 14% 2%, rgba(255, 255, 255, 0.96) 0%, rgba(255, 255, 255, 0) 62%),
+                radial-gradient(52% 40% at 92% 8%, rgba(247, 202, 201, 0.34) 0%, rgba(247, 202, 201, 0) 70%),
+                radial-gradient(64% 46% at 84% 96%, rgba(146, 168, 209, 0.30) 0%, rgba(146, 168, 209, 0) 72%),
+                radial-gradient(70% 50% at 12% 92%, rgba(247, 217, 170, 0.26) 0%, rgba(247, 217, 170, 0) 74%),
+                linear-gradient(165deg, #f8f9fb 0%, #eceef1 48%, #e7e9ee 100%);
+            background-attachment: fixed;
+            background-repeat: no-repeat;
             color: var(--text-color);
-            
+        }
+
+        /* 磨砂颗粒：极细的一层噪点压在最底下，透过滤色片看过去就是「磨砂」的手感。
+           纯 SVG 织出来的，不额外请求图片；pointer-events 关掉，绝不拦截点击。 */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.55;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.30'/%3E%3C/svg%3E");
+            background-size: 160px 160px;
+            background-repeat: repeat;
         }
 
         .app-container {
@@ -60,6 +90,8 @@
             display: flex;
             flex-direction: column;
             position: relative;
+            /* 压在噪点层之上（噪点是 z-index: 0 的 body::before） */
+            z-index: 1;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
         }
         /* 新增：检测如果是手机等移动设备屏幕，强制 100% 宽度，消除两边留白 */
@@ -143,7 +175,10 @@
             align-items: center;
             padding: 15px;
             background-color: var(--header-bg-color);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            -webkit-backdrop-filter: var(--glass-blur);
+            backdrop-filter: var(--glass-blur);
+            /* 玻璃分界线：一条极淡的高光 + 一层很软的投影 */
+            box-shadow: 0 1px 0 var(--glass-line), 0 2px 8px rgba(0, 0, 0, 0.04);
             flex-shrink: 0;
             position: relative;
             z-index: 5;
@@ -203,7 +238,10 @@
         .home-header-banner {
             width: 100%;
             height: 220px;
-            background-color: rgba(0, 0, 0, 0.05);
+            /* 没设置封面图时是一块玻璃，不是灰块：半透明白 + 一圈高光边 */
+            background-color: rgba(255, 255, 255, 0.42);
+            background-image: linear-gradient(150deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.10) 100%);
+            box-shadow: inset 0 0 0 1px var(--glass-line), 0 8px 24px rgba(74, 78, 86, 0.08);
             border-radius: var(--border-radius);
             cursor: default;
             background-size: cover;
@@ -220,7 +258,7 @@
             border-radius: 50%;
             border: 3px solid var(--white);
             box-shadow: var(--shadow);
-            background-color: var(--light-gray);
+            background-color: rgba(255, 255, 255, 0.78);
             overflow: hidden;
             cursor: default;
             display: flex;
@@ -586,49 +624,50 @@
         }
 
         /* 卡片比例按拍立得来：竖长方形，底部留一条宽白边。
-           宽度要给足——手机上小组件容器本来就窄，26% 会被压成细长条。 */
+           宽度要给足——手机上小组件容器本来就窄，26% 会被压成细长条；
+           再往上加会让三张轻微重叠，反而更像桌上摊开的照片。 */
         .hwpl-2x2 .hwp-card {
-            width: 62%;
-            height: 74%;
+            width: 72%;
+            height: 84%;
         }
 
         .hwpl-2x2 .hwp-card-1 {
-            left: 3%;
-            top: 7%;
-            transform: rotate(-6deg);
+            left: 1.5%;
+            top: 5%;
+            transform: rotate(-4deg);
         }
 
         .hwpl-2x2 .hwp-card-2 {
-            right: 3%;
-            bottom: 7%;
-            transform: rotate(4deg);
+            right: 1.5%;
+            bottom: 5%;
+            transform: rotate(3deg);
             z-index: 2;
         }
 
         .hwpl-4x2 .hwp-card {
-            width: 30%;
-            height: 76%;
+            width: 33.5%;
+            height: 88%;
         }
 
         .hwpl-4x2 .hwp-card-1 {
-            left: 2.5%;
-            top: 8%;
-            transform: rotate(-6deg);
+            left: 0.5%;
+            top: 7%;
+            transform: rotate(-4deg);
         }
 
         .hwpl-4x2 .hwp-card-2 {
-            left: 34.5%;
-            top: 3%;
-            width: 31%;
-            height: 86%;
-            transform: rotate(1.5deg);
+            left: 33%;
+            top: 2%;
+            width: 35%;
+            height: 96%;
+            transform: rotate(1.2deg);
             z-index: 3;
         }
 
         .hwpl-4x2 .hwp-card-3 {
-            right: 2.5%;
-            top: 8%;
-            transform: rotate(6deg);
+            right: 0.5%;
+            top: 7%;
+            transform: rotate(4deg);
         }
 
         .hwp-caption {
@@ -1558,7 +1597,9 @@
             justify-content: center;
             padding: 10px 15px;
             background-color: var(--header-bg-color);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            -webkit-backdrop-filter: var(--glass-blur);
+            backdrop-filter: var(--glass-blur);
+            box-shadow: 0 1px 0 var(--glass-line), 0 2px 8px rgba(0, 0, 0, 0.04);
             position: relative;
             z-index: 10;
             flex-shrink: 0;
@@ -2125,7 +2166,10 @@
             display: flex;
             padding: 10px;
             padding-bottom: calc(10px + env(safe-area-inset-bottom));
-            border-top: 1px solid var(--light-gray);
+            border-top: 1px solid var(--glass-line);
+            background-color: var(--header-bg-color);
+            -webkit-backdrop-filter: var(--glass-blur);
+            backdrop-filter: var(--glass-blur);
             align-items: center;
         }
 
@@ -2436,12 +2480,16 @@
         }
 
         .modal {
-            background-color: var(--header-bg-color);
+            /* 玻璃弹窗：半透明白 + 模糊背后的内容，边缘一圈高光 */
+            background-color: rgba(255, 255, 255, 0.82);
+            -webkit-backdrop-filter: var(--glass-blur);
+            backdrop-filter: var(--glass-blur);
             padding: 25px;
             border-radius: var(--border-radius);
             width: 90%;
             max-width: 400px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 8px 30px rgba(40, 44, 52, 0.18),
+                        0 0 0 1px rgba(255, 255, 255, 0.6) inset;
             display: flex;
             flex-direction: column;
             max-height: 80vh;
@@ -4191,10 +4239,12 @@
             width: 100%;
             height: calc(60px + env(safe-area-inset-bottom));
             background-color: var(--header-bg-color);
-            border-top: 1px solid var(--light-gray);
+            -webkit-backdrop-filter: var(--glass-blur);
+            backdrop-filter: var(--glass-blur);
+            border-top: 1px solid var(--glass-line);
             flex-shrink: 0;
             padding-bottom: env(safe-area-inset-bottom);
-            box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
         }
 
         .nav-item {
@@ -8201,8 +8251,13 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: #fdf6f7;
-            /* 与您的 --bg-color 保持一致 */
+            /* 与页面磨砂玻璃底一致：开屏 → 主页不会闪一下色 */
+            background-color: var(--bg-base);
+            background-image:
+                radial-gradient(58% 42% at 14% 2%, rgba(255, 255, 255, 0.96) 0%, rgba(255, 255, 255, 0) 62%),
+                radial-gradient(52% 40% at 92% 8%, rgba(247, 202, 201, 0.34) 0%, rgba(247, 202, 201, 0) 70%),
+                radial-gradient(64% 46% at 84% 96%, rgba(146, 168, 209, 0.30) 0%, rgba(146, 168, 209, 0) 72%),
+                linear-gradient(165deg, #f8f9fb 0%, #eceef1 48%, #e7e9ee 100%);
             z-index: 999999;
             /* 确保层级最高 */
             display: flex;
@@ -10283,7 +10338,7 @@
             <div id="page-identities" class="page">
                 <div class="header">
                     <i class="fas fa-arrow-left back-button" data-page="page-home"></i>
-                    <h1>角色与身份</h1>
+                    <h1>char</h1>
                 </div>
                 <div class="content">
                     <!-- 原有的身份和角色列表 -->
@@ -10299,7 +10354,7 @@
             </div>
             <div id="page-worldbooks" class="page">
                 <div class="header"><i class="fas fa-arrow-left back-button" data-page="page-home"></i>
-                    <h1>世界设定集</h1>
+                    <h1>世界书</h1>
                 </div>
                 <div class="content">
                     <ul id="worldbooks-list" class="list-container"></ul>
@@ -11077,7 +11132,7 @@
 
             <div id="page-settings" class="page">
                 <div class="header"><i class="fas fa-arrow-left back-button" data-page="page-home"></i>
-                    <h1>应用设置</h1>
+                    <h1>设置</h1>
                 </div>
                 <div class="content">
                 <!-- 聊天设置入口 -->
@@ -11251,7 +11306,7 @@
             </div>
             <div id="page-customize" class="page">
                 <div class="header"><i class="fas fa-arrow-left back-button" data-page="page-home"></i>
-                    <h1>主页自定义</h1>
+                    <h1>美化</h1>
                 </div>
                 <div class="content">
                     <div class="customize-group">
@@ -11655,7 +11710,7 @@
                     <p>欢迎使用 37Chat 网页服务（以下简称"本网页"）。请在使用本网页前，仔细阅读并充分理解以下条款。本声明旨在明确开发者与用户之间的责任界限，当您开始使用本网页时，即表示您已同意本声明的全部内容。如您不同意本声明任何条款，请立即停止使用本网页。</p>
 
                     <h4 style="margin-top: 20px; margin-bottom: 8px;">一、关于网页性质</h4>
-                    <p>本网页是一个完全在您的浏览器本地运行的前端工具，旨在为您提供一个与大型语言模型（LLM）进行交互的界面。<strong>本网页的所有数据，包括但不限于您的角色设定、身份信息、世界书、聊天记录、应用设置等，均加密存储在您当前使用设备的浏览器本地存储中。这意味着所有数据仅存在于您自己的电脑或手机上。开发者无法也绝不会访问、查看、收集、上传或存储您的任何个人数据。</strong>请注意：如果您清除浏览器缓存/数据或更换设备，所有数据将会永久丢失且无法恢复。
+                    <p>本网页是一个完全在您的浏览器本地运行的前端工具，旨在为您提供一个与大型语言模型（LLM）进行交互的界面。<strong>本网页的所有数据，包括但不限于您的角色设定、身份信息、世界书、聊天记录、设置等，均加密存储在您当前使用设备的浏览器本地存储中。这意味着所有数据仅存在于您自己的电脑或手机上。开发者无法也绝不会访问、查看、收集、上传或存储您的任何个人数据。</strong>请注意：如果您清除浏览器缓存/数据或更换设备，所有数据将会永久丢失且无法恢复。
                     </p>
 
                     <h4 style="margin-top: 20px; margin-bottom: 8px;">二、关于第三方API服务</h4>
@@ -15283,7 +15338,7 @@
                 state.cart = loadedCart || [];
                 state.orders = loadedOrders || [];
 
-                // 核心优化 3：健壮地初始化或迁移应用设置（settings 和 ui）
+                // 核心优化 3：健壮地初始化或迁移设置（settings 和 ui）
                 if (appState && appState.settings) {
                     if (appState.settings.apiConfigs) {
                         state.settings = appState.settings;
@@ -15428,7 +15483,7 @@
             } catch (error) {
                 clearTimeout(loadingTimeout);
                 console.error("【严重错误】数据加载或处理失败:", error);
-                alert("数据加载或升级过程中发生严重错误，可能是数据库已损坏。\n\n建议操作：\n1. 尝试强制刷新页面。\n2. 如果问题依旧，您可能需要在“应用设置”页面中“清除全部数据”来重置应用。\n\n错误信息: " + error.message);
+                alert("数据加载或升级过程中发生严重错误，可能是数据库已损坏。\n\n建议操作：\n1. 尝试强制刷新页面。\n2. 如果问题依旧，您可能需要在“设置”页面中“清除全部数据”来重置应用。\n\n错误信息: " + error.message);
                 // 在这里可以选择是否要重置状态，或者让用户停留在错误界面
             }
         };
@@ -16721,7 +16776,7 @@
             const container = document.getElementById('character-list-for-chat');
             container.innerHTML = '';
             if (state.characters.length === 0) {
-                container.innerHTML = '<p style="text-align:center; color:#999; padding: 20px;">请先去“角色与身份”页面创建AI角色。</p>';
+                container.innerHTML = '<p style="text-align:center; color:#999; padding: 20px;">请先去“char”页面创建AI角色。</p>';
                 return;
             }
 
@@ -16796,7 +16851,7 @@
                             startChat({ chatId: char.id, type: 'single' });
                         } else {
                             // 调用 alert() 就会在屏幕正中间弹出一个带有“确定”按钮的系统弹窗
-                            alert('无法开始聊天：\n请先前往底部【角色与身份】页面，点击该AI角色右侧的“锁”图标，为TA锁定绑定一个您的身份！');
+                            alert('无法开始聊天：\n请先前往底部【char】页面，点击该AI角色右侧的“锁”图标，为TA锁定绑定一个您的身份！');
                         }
                     });
                 }
@@ -18917,7 +18972,7 @@
             // ▼▼▼ 在函数开头添加此代码块 ▼▼▼
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
 
                 // 停止“正在输入”状态
                 typingIndicator.classList.remove('active');
@@ -19091,7 +19146,7 @@ ${serializedHistory || 'No recent history.'}
             const activeConfig = state.settings.apiConfigs.find(c => c.id === activeConfigId);
 
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
 
@@ -19926,7 +19981,7 @@ ${(chatObject.characterState?.anniversaries || []).map(a => `- ${a.date}: ${a.ev
         const handleVideoSendMessage = async (isReroll = false, initialPrompt = null) => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
             const character = state.characters.find(c => c.id === state.activeCharacterId);
@@ -20228,7 +20283,7 @@ ${serializedHistory}
 
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
 
@@ -22959,7 +23014,7 @@ ${commonContext}`;
             container.innerHTML = '';
 
             if (!state.groupChats || state.groupChats.length === 0) {
-                container.innerHTML = '<p style="text-align:center; color:#999; padding: 20px;">还没有创建群聊，快去“角色与身份”页面创建一个吧！</p>';
+                container.innerHTML = '<p style="text-align:center; color:#999; padding: 20px;">还没有创建群聊，快去“char”页面创建一个吧！</p>';
                 return;
             }
 
@@ -24545,7 +24600,7 @@ ${commonContext}`;
         const generateDiaryEntry = async (newDiaryId) => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
 
                 typingIndicator.classList.remove('active');
                 state.isGenerating = false;
@@ -25209,7 +25264,7 @@ TA的人设是: ${processedUserPersona}
         const generateLocationTimeline = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
 
                 // 停止“正在输入”状态
                 typingIndicator.classList.remove('active');
@@ -25700,7 +25755,7 @@ TA的人设是: ${processedUserPersona}
         const generateMemo = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
 
                 // 停止“正在输入”状态
                 typingIndicator.classList.remove('active');
@@ -26018,7 +26073,7 @@ const renderEssayListPage = () => {
         const generateEssay = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
             const character = state.characters.find(c => c.id === state.activeCharacterId);
@@ -26155,7 +26210,7 @@ ${serializedHistory || '最近没有聊天记录。'}
         const generateMusicHistory = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
 
                 // 停止“正在输入”状态
                 typingIndicator.classList.remove('active');
@@ -26474,7 +26529,7 @@ const renderChatAppDetailPage = () => {
         const generateChatAppHistory = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
             const character = state.characters.find(c => c.id === state.activeCharacterId);
@@ -26766,7 +26821,7 @@ ${serializedHistory || '最近没有聊天记录。'}
         const generateSoftwareUsage = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
 
                 // 停止“正在输入”状态
                 typingIndicator.classList.remove('active');
@@ -27004,7 +27059,7 @@ ${serializedHistory || '最近没有聊天记录。'}
         const generateShoppingHistory = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
 
                 // 停止“正在输入”状态
                 typingIndicator.classList.remove('active');
@@ -27295,7 +27350,7 @@ ${serializedHistory || 'No recent chat history.'}
         const generateEmailHistory = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
 
@@ -27441,7 +27496,7 @@ ${serializedHistory || '暂无聊天记录。'}
         const generateBrowsingHistory = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
 
                 // 停止“正在输入”状态
                 typingIndicator.classList.remove('active');
@@ -27627,14 +27682,14 @@ ${serializedHistory || '最近没有聊天记录。'}
         const HOME_WIDGET_SIZES = { '1x1': '1×1', '2x1': '2×1', '2x2': '2×2', '4x1': '4×1', '4x2': '4×2', '4x4': '4×4' };
 
         const HOME_APP_DEFS = {
-            chat: { label: '开始聊天', icon: 'fas fa-comments', page: 'page-characters-for-chat' },
-            characters: { label: '角色与身份', icon: 'fas fa-user-astronaut', page: 'page-identities' },
-            worldbooks: { label: '世界设定', icon: 'fas fa-book-atlas', page: 'page-worldbooks' },
-            settings: { label: '应用设置', icon: 'fas fa-cog', page: 'page-settings' },
+            chat: { label: '微信', icon: 'fas fa-comments', page: 'page-characters-for-chat' },
+            characters: { label: 'char', icon: 'fas fa-user-astronaut', page: 'page-identities' },
+            worldbooks: { label: '世界书', icon: 'fas fa-book-atlas', page: 'page-worldbooks' },
+            settings: { label: '设置', icon: 'fas fa-cog', page: 'page-settings' },
             store: { label: '商店', icon: 'fas fa-store', page: 'page-store' },
             community: { label: '论坛', icon: 'fas fa-users', page: 'page-forum' },
             wallet: { label: '钱包', icon: 'fas fa-wallet', page: 'page-wallet' },
-            customize: { label: '自定义', icon: 'fas fa-magic', page: 'page-customize' }
+            customize: { label: '美化', icon: 'fas fa-magic', page: 'page-customize' }
         };
 
         // 桌面度量：与原版 .home-grid 完全一致（4 列 / gap 15 / 左右 25 / 上 20 / 图标行高 85）
@@ -30156,7 +30211,7 @@ ${serializedHistory || '最近没有聊天记录。'}
         const generateAlbum = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
 
                 // 停止“正在输入”状态
                 typingIndicator.classList.remove('active');
@@ -30465,7 +30520,7 @@ ${serializedHistory || '最近没有聊天记录。'}
         const generateTiktok = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往"应用设置"页面检查。');
+                alert('当前的API配置不完整，请前往"设置"页面检查。');
                 return;
             }
             const character = state.characters.find(c => c.id === state.activeCharacterId);
@@ -31255,7 +31310,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 </div>
                 <div class="quick-clean-item" data-action="clearCustomizations" style="background:#fff; border:1px solid #eee; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
                     <div>
-                        <div style="font-weight:600;"><i class="fas fa-magic" style="color:#1abc9c;"></i> 清除主页自定义数据</div>
+                        <div style="font-weight:600;"><i class="fas fa-magic" style="color:#1abc9c;"></i> 清除主页美化数据</div>
                         <div style="font-size:0.8rem; color:#888; margin-top:4px;">恢复壁纸、图标、颜色、字体、全局CSS等UI设置</div>
                     </div>
                     <button class="btn btn-secondary" style="padding:6px 14px; font-size:0.85rem;">清除</button>
@@ -31310,7 +31365,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 
                 <div style="font-size:0.8rem; font-weight:bold; color:#666; margin:12px 0 6px; padding-left:4px;">📚 其它与设置</div>
                 <label class="bind-book-item" style="cursor:pointer;"><input type="checkbox" value="novels"> 本地上传的小说文件 (.txt)</label>
-                <label class="bind-book-item" style="cursor:pointer;"><input type="checkbox" value="appSettings"> 应用设置 (API配置/自动调用/模型选择等)</label>
+                <label class="bind-book-item" style="cursor:pointer;"><input type="checkbox" value="appSettings"> 设置 (API配置/自动调用/模型选择等)</label>
             `;
 
             loadingEl.style.display = 'none';
@@ -31625,7 +31680,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                     clearAllPosts: '所有论坛帖子',
                     clearAllMoments: '所有朋友圈',
                     clearCheckInData: '所有查岗数据',
-                    clearCustomizations: '所有主页自定义外观设置'
+                    clearCustomizations: '所有主页美化外观设置'
                 };
                 if (confirm(`确定要清除${actionNames[action]}吗？此操作不可逆！\n\n建议先导出备份。`)) {
                     try {
@@ -31928,7 +31983,7 @@ ${serializedHistory || '最近没有聊天记录。'}
         const generateTiktokMessages = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('API配置不完整，请前往应用设置检查。');
+                alert('API配置不完整，请前往设置检查。');
                 return;
             }
 
@@ -32599,7 +32654,7 @@ ${historyForPrompt}
                         activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
                     }
                     if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                        throw new Error('API配置不完整，请检查应用设置。');
+                        throw new Error('API配置不完整，请检查设置。');
                     }
 
                     const response = await fetch(`${activeConfig.apiUrl}/chat/completions`, {
@@ -33568,7 +33623,7 @@ ${historyForPrompt}
 
             const availableChars = state.characters.filter(c => c.lockedPersonaId);
             if (availableChars.length === 0) {
-                fortuneCharList.innerHTML = '<p style="grid-column: 1 / -1; text-align: center; color: #999;">请先在“角色与身份”页面绑定身份再来占卜。</p>';
+                fortuneCharList.innerHTML = '<p style="grid-column: 1 / -1; text-align: center; color: #999;">请先在“char”页面绑定身份再来占卜。</p>';
                 generateFortuneBtn.style.display = 'none';
                 return;
             }
@@ -33774,7 +33829,7 @@ ${historyForPrompt}
 
             // 1. 检查 API 配置
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey) {
-                if (newsContentBody) newsContentBody.innerHTML = '<div style="text-align:center; padding:50px; color:#666;">请先在“应用设置”中配置有效的 API Key 和 URL。</div>';
+                if (newsContentBody) newsContentBody.innerHTML = '<div style="text-align:center; padding:50px; color:#666;">请先在“设置”中配置有效的 API Key 和 URL。</div>';
                 return;
             }
 
@@ -35711,7 +35766,7 @@ ${historyForPrompt}
                 || state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
 
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey) {
-                alert('用于论坛的API配置不完整，请前往“应用设置”检查。');
+                alert('用于论坛的API配置不完整，请前往“设置”检查。');
                 return;
             }
 
@@ -35831,7 +35886,7 @@ ${historyForPrompt}
                 || state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
 
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey) {
-                alert('用于论坛的API配置不完整，请前往“应用设置”检查。');
+                alert('用于论坛的API配置不完整，请前往“设置”检查。');
                 return;
             }
 
@@ -37217,7 +37272,7 @@ ${historyForPrompt}
         const generateProducts = async (count, query, tagsQuery) => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('API配置不完整，请先在“应用设置”中配置。');
+                alert('API配置不完整，请先在“设置”中配置。');
                 return;
             }
 
@@ -38886,7 +38941,7 @@ ${historyForPrompt}
 
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                fanficDisplayBody.innerHTML = `<p style="color: red;">错误：API配置不完整，请前往“应用设置”检查。</p>`;
+                fanficDisplayBody.innerHTML = `<p style="color: red;">错误：API配置不完整，请前往“设置”检查。</p>`;
                 return;
             }
 
@@ -41091,7 +41146,7 @@ ${historyForPrompt}
             const userSelectedBaseUrl = state.settings.minimaxBaseUrl || 'https://api.minimax.chat';
 
             if (!apiKey || !groupId) {
-                alert("请先在应用设置中配置 Minimax API Key 和 Group ID");
+                alert("请先在设置中配置 Minimax API Key 和 Group ID");
                 return null;
             }
             if (!voiceId) {
@@ -41601,7 +41656,7 @@ ${historyForPrompt}
         const generateBookshelf = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
             const character = state.characters.find(c => c.id === state.activeCharacterId);
@@ -41830,7 +41885,7 @@ ${serializedHistory || '最近没有聊天记录。'}
         const generatePodcast = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
             const character = state.characters.find(c => c.id === state.activeCharacterId);
@@ -43039,7 +43094,7 @@ ${ptHistory}`;
         const generateSportsData = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
             const character = state.characters.find(c => c.id === state.activeCharacterId);
@@ -43351,7 +43406,7 @@ ${serializedHistory || '最近没有聊天记录。'}
         const generateTravelLog = async () => {
             const activeConfig = state.settings.apiConfigs.find(c => c.id === state.settings.activeApiConfigId);
             if (!activeConfig || !activeConfig.apiUrl || !activeConfig.apiKey || !activeConfig.model) {
-                alert('当前的API配置不完整，请前往“应用设置”页面检查。');
+                alert('当前的API配置不完整，请前往“设置”页面检查。');
                 return;
             }
             const character = state.characters.find(c => c.id === state.activeCharacterId);

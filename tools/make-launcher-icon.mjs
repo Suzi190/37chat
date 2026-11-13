@@ -183,12 +183,12 @@ function grain(x, y) {
   return v - Math.floor(v);
 }
 
-/** 不透明的「无色磨砂玻璃」底：上亮下暗的浅白渐变 + 左上柔光 + 细颗粒 */
+/** 不透明的「浅灰磨砂玻璃」底：上亮下暗的浅灰渐变 + 左上柔光 + 细颗粒 */
 function drawGlass(size) {
   const img = { w: size, h: size, data: Buffer.alloc(size * size * 4) };
-  // 中性色（不带任何色相），上亮下暗，边缘收一层浅灰，读起来才像一整块玻璃
-  const top = [251, 251, 252];
-  const bottom = [206, 208, 212];
+  // 中性浅灰（不带色相）：上亮下暗，边缘收一层更深的灰，读起来才像一整块玻璃
+  const top = [234, 236, 239];
+  const bottom = [189, 192, 198];
   for (let y = 0; y < size; y += 1) {
     const ty = smooth(y / (size - 1));
     for (let x = 0; x < size; x += 1) {

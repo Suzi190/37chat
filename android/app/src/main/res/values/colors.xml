@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 保留给极老的启动器做兜底纯色（自适应图标本身已改用磨砂玻璃图片） -->
-    <color name="ic_launcher_background">#F1F1F2</color>
-    <!-- 启动瞬间的窗口底色：跟页面底色一致，避免从深色闪一下再变浅色 -->
-    <color name="window_background">#FDF6F7</color>
+    <!-- 保留给极老的启动器做兜底纯色（自适应图标本身已改用浅灰磨砂玻璃图片） -->
+    <color name="ic_launcher_background">#DFE1E5</color>
+    <!-- 启动瞬间的窗口底色：跟页面磨砂玻璃底（CSS 里的 bg-base #ECEEF1）一致，避免闪一下别的颜色 -->
+    <color name="window_background">#ECEEF1</color>
 </resources>
