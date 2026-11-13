@@ -8,6 +8,8 @@ on:
       - 'android/**'
       - 'tools/prepare-apk-assets.mjs'
       - 'tools/check-html-syntax.mjs'
+      - 'tools/make-launcher-icon.mjs'
+      - 'tools/launcher-source.png'
       - '.github/workflows/android.yml'
   pull_request:
     paths:
