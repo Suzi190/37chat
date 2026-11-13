@@ -174,6 +174,11 @@ gradle assembleRelease    # 产物：android/app/build/outputs/apk/release/app-r
 4. **安全模式**：万一 `https://localhost` 被 ROM 拦截，会自动回退到
    `file:///android_asset/www/index.html` 并提示「安全模式加载中」
    （这个模式下 IndexedDB 不可用，只当兜底）。
+5. **开屏自检**：页面 `<head>` 最前面注入了一段纯 ES5 脚本，卡在开屏时会把原因写在
+   「37Chat / 正在加载数据」那行字的位置上，红字，形如
+   `启动脚本出错：…` / `初始化失败：…` / `初始化卡住了（8 秒未完成）… | WebView 120 | https://localhost/index.html`。
+   看到红字直接截图即可。另外打包时开屏大字已经从 37Chat 改成「云曰」
+   （Dexie 库名 `37ChatDB` 保持不动，否则等于清空用户数据）。
 
 如果仍然直接闪退（连错误页都来不及显示），那就是进程级/native 崩溃，需要系统日志：
 
