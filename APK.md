@@ -250,11 +250,65 @@ adb logcat -d | findstr YunYue    # 看应用自己的日志（TAG = YunYue）
 
 
 
-- **装不上 / 提示已存在同签名应用冲突**：debug 签名与正式签名不能共存，
-  先卸载旧包（数据会丢，先导出备份）。
+- **装不上 / 提示「已存在同签名应用冲突」**：debug 签名与正式签名不能共存，
+  先卸载旧包（数据会丢，先在 App 里导出备份）。
 - **网页更新了但 APK 里还是老内容**：APK 里的网页是打包时快照，
-  改完 `app/` 要重新跑一次 workflow。
+  改完 `app/` 要重新跑一次 workflow（或本地重新 `assembleDebug`）。
 - **想在手机上调试网页**：连电脑后打开 Chrome `chrome://inspect`，
   WebView 已开启调试（`setWebContentsDebuggingEnabled(true)`）。
 - **导出失败**：先看 Toast 提示的路径；若 Android 7~9 拒绝了存储权限，
   文件会写到 App 私有目录（`Android/data/com.yunyue.app/files/Download/`）。
+
+## 八、换了新包，图标 / 顶部还是老样子？
+
+先分清是「包没换」还是「系统缓存」——下面三条按顺序确认，基本能一次定位。
+
+### 1. 确认装上的确实是新包
+
+```bash
+adb shell dumpsys package com.yunyue.app | findstr versionName
+adb shell dumpsys package com.yunyue.app | findstr lastUpdateTime
+```
+
+`lastUpdateTime` 不是刚刚，就说明系统根本没装新包（多半是签名不一致被静默拦下了，
+详见第七节的「应用未安装」）。没 adb 就看「设置 → 应用 → 云曰」里的版本/安装时间。
+
+### 2. 图标没变：桌面缓存，不是包的问题
+
+Android 8.0+ 的桌面**只读自适应图标**（`mipmap-anydpi-v26/ic_launcher.xml`），
+而且会把渲染结果缓存进 launcher 的数据库。换包后图标不动，按这个顺序试：
+
+1. **完全卸载再装**（不是覆盖安装）—— 缓存跟着包一起清掉；
+2. 国产桌面（MIUI / EMUI / ColorOS / OriginOS）还有一层自己的图标缓存：
+   「设置 → 应用管理 → 找到「桌面」→ 清除缓存」，
+   或者长按图标 →「编辑 / 更换图标」→ 恢复默认；
+3. 换个主题再换回来，能强制桌面重绘图标；
+4. 装 `yunyue-debug.apk` 验证：它是**另一个包名**（`com.yunyue.app.debug`），
+   桌面上会多一个全新图标，不受旧缓存影响 —— 如果 debug 包的图标是新的，
+   那就 100% 是旧包的缓存问题，而不是打包问题。
+
+> 自查方法：`mipmap-anydpi-v26/ic_launcher.xml` 里 `background` 指向的是
+> `@mipmap/ic_launcher_background`（一张磨砂玻璃 PNG），不是 `@color/...`。
+> 只要还是 `@color`，那就是没打上这次的新图标。
+
+### 3. 顶部还是一条白条：看页面有没有拿到 `android-shell`
+
+壳里系统状态栏是隐藏的，顶部那条是**页面自己画的模拟状态栏**。
+要让它变透明，必须满足两个条件，缺一不可：
+
+1. Java 侧注入成功：`html` 元素上有 `android-shell` 这个 class；
+2. 页面 CSS 里有 `html.android-shell .status-bar { background: transparent; ... }`。
+
+用 `chrome://inspect` 连上设备后，在 Console 里敲：
+
+```js
+document.documentElement.className            // 应该包含 android-shell
+getComputedStyle(document.querySelector('.status-bar')).backgroundColor
+// 必须是 rgba(0, 0, 0, 0)，如果是 rgb(255, 255, 255) 就是 CSS 没进包
+```
+
+- 没有 `android-shell`：说明 WebView 里跑的还是旧网页（重新打包），
+  或 `onPageFinished` 没触发（换页后不消失是正常的，class 在 `html` 上，切页不会掉）。
+- 有 class 但背景仍是白色：**CSS 优先级被页面后面的规则盖掉了**，
+  把 `html.android-shell .status-bar` 这段往后挪，或加 `!important` 排查。
+
