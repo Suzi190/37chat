@@ -14,6 +14,7 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -22,6 +23,7 @@ import android.webkit.ConsoleMessage;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.MimeTypeMap;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -31,10 +33,14 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -68,8 +74,15 @@ public class MainActivity extends Activity {
     private static final int REQ_WRITE_STORAGE = 1002;
 
     private WebView webView;
+    private FrameLayout rootView;
     private ValueCallback<Uri[]> pendingFileCallback;
     private int topInsetPx = 0;
+
+    /** 进程级崩溃兜底：只装一次，存下来给下次启动看 */
+    private static Thread.UncaughtExceptionHandler previousCrashHandler;
+
+    /** 是否已经回退到 file:// 兜底模式，避免来回跳 */
+    private boolean usedFileFallback = false;
 
     /** 正在写入的导出文件：JS 分片传过来，这里顺序写盘 */
     private final Map<String, SaveSession> sessions = new ConcurrentHashMap<>();
@@ -84,33 +97,30 @@ public class MainActivity extends Activity {
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 先把兜底装好：任何启动期异常都改成“把原因显示在屏幕上”，而不是闪退
+        installCrashHandler();
+        try {
+            setUpUi(savedInstanceState);
+        } catch (Throwable fatal) {
+            showFatalError(fatal);
+        }
+    }
+
+    /** 真正的界面搭建；异常由 onCreate 统一兜住并显示在屏幕上 */
+    private void setUpUi(Bundle savedInstanceState) {
         applyFullscreen();
 
         FrameLayout root = new FrameLayout(this);
+        rootView = root;
         root.setBackgroundColor(0xFF0E0C0A);
 
-        webView = new WebView(this);
+        webView = buildWebView();
         root.addView(webView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
         // decorView 就绪后再设一次，确保系统栏真的被隐藏（Android 11+ 更稳）
         applyFullscreen();
-
-        // 需要连电脑调试网页时可以打开 chrome://inspect
-        WebView.setWebContentsDebuggingEnabled(true);
-
-        configureWebView();
-        webView.addJavascriptInterface(new Bridge(), "AndroidBridge");
-        webView.setWebViewClient(new AppWebViewClient());
-        webView.setWebChromeClient(new AppChromeClient());
-        webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
-            if (url == null || url.startsWith("blob:")) {
-                // blob: 交给页面里的 JS 桥接处理（见 app/index.html 末尾的适配脚本）
-                return;
-            }
-            openInBrowser(Uri.parse(url));
-        });
 
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             int top = topInsetOf(insets);
@@ -126,11 +136,39 @@ public class MainActivity extends Activity {
         } else {
             webView.restoreState(savedInstanceState);
         }
+
+        // 上一次启动留下的崩溃信息，直接铺在页面上（点一下关掉），方便截图反馈
+        showPreviousCrashIfAny();
+    }
+
+    /** 建一个配置好的 WebView；渲染进程崩溃后也用它重建 */
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    private WebView buildWebView() {
+        WebView view = new WebView(this);
+        // 需要连电脑调试网页时可以打开 chrome://inspect
+        WebView.setWebContentsDebuggingEnabled(true);
+        try {
+            configureWebView(view);
+        } catch (Throwable error) {
+            // 个别 ROM 会拒绝某些 WebSettings，缺了不影响页面基本可用
+            Log.w(TAG, "WebView 部分设置未生效", error);
+        }
+        view.addJavascriptInterface(new Bridge(), "AndroidBridge");
+        view.setWebViewClient(new AppWebViewClient());
+        view.setWebChromeClient(new AppChromeClient());
+        view.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+            if (url == null || url.startsWith("blob:")) {
+                // blob: 交给页面里的 JS 桥接处理（见 app/index.html 末尾的适配脚本）
+                return;
+            }
+            openInBrowser(Uri.parse(url));
+        });
+        return view;
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private void configureWebView() {
-        WebSettings settings = webView.getSettings();
+    private void configureWebView(WebView view) {
+        WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
@@ -153,12 +191,21 @@ public class MainActivity extends Activity {
             settings.setAlgorithmicDarkeningAllowed(false);
         }
         CookieManager.getInstance().setAcceptCookie(true);
-        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        view.setOverScrollMode(View.OVER_SCROLL_NEVER);
     }
 
     /** 真全屏：隐藏状态栏和导航栏，内容铺到刘海/挖孔区，边缘滑动可临时唤出系统栏 */
-    @SuppressLint("ObsoleteSdkInt")
     private void applyFullscreen() {
+        try {
+            applyFullscreenInternal();
+        } catch (Throwable error) {
+            // 个别 ROM 不允许改系统栏属性，忽略即可，绝不能因此闪退
+            Log.w(TAG, "全屏设置未生效", error);
+        }
+    }
+
+    @SuppressLint("ObsoleteSdkInt")
+    private void applyFullscreenInternal() {
         WindowManager.LayoutParams params = getWindow().getAttributes();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             params.layoutInDisplayCutoutMode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
@@ -449,9 +496,32 @@ public class MainActivity extends Activity {
         public void onReceivedError(WebView view, WebResourceRequest request,
                                     WebResourceError error) {
             super.onReceivedError(view, request, error);
-            if (request.isForMainFrame()) {
-                Log.w(TAG, "页面加载失败: " + request.getUrl() + " → " + error.getDescription());
+            if (request == null || !request.isForMainFrame()) {
+                return;
             }
+            String url = request.getUrl() == null ? "" : request.getUrl().toString();
+            Log.w(TAG, "页面加载失败: " + url + " → " + error.getDescription());
+
+            // 极少数 ROM 会拦掉“假域名”请求，这时退到本地文件模式，至少能打开
+            // （file:// 下 IndexedDB 不可用，只当兜底，正常设备不会走到这里）
+            if (!usedFileFallback && url.startsWith("https://" + APP_HOST)) {
+                usedFileFallback = true;
+                Toast.makeText(MainActivity.this,
+                        "安全模式加载中，部分数据功能会受限", Toast.LENGTH_LONG).show();
+                view.loadUrl("file:///android_asset/www/index.html");
+            }
+        }
+
+        @Override
+        @SuppressLint("NewApi")
+        public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+            // WebView 渲染进程挂掉时，默认行为是连整个 App 一起杀掉（用户看到的就是“闪退”）。
+            // 这里自己接住：销毁旧实例、建一个新的、重新加载页面。
+            Log.e(TAG, "WebView 渲染进程退出，didCrash=" + (detail != null && detail.didCrash()));
+            if (view == webView) {
+                rebuildWebView();
+            }
+            return true;
         }
     }
 
@@ -621,5 +691,142 @@ public class MainActivity extends Activity {
             name = "云曰导出.txt";
         }
         return name.length() > 120 ? name.substring(name.length() - 120) : name;
+    }
+
+    /* ============================================================
+       崩溃兜底：宁可把原因显示在屏幕上，也不要直接闪退
+       ============================================================ */
+
+    private File crashFile() {
+        return new File(getFilesDir(), "last-crash.txt");
+    }
+
+    private void installCrashHandler() {
+        if (previousCrashHandler != null) {
+            return;
+        }
+        previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+            saveCrash(error);
+            // 记完再把控制权交回系统：该退出还是退出，但下次启动能看到原因
+            if (previousCrashHandler != null) {
+                previousCrashHandler.uncaughtException(thread, error);
+            }
+        });
+    }
+
+    private void saveCrash(Throwable error) {
+        if (error == null) {
+            return;
+        }
+        try (OutputStream out = new FileOutputStream(crashFile())) {
+            String text = Log.getStackTraceString(error);
+            out.write(text.getBytes("UTF-8"));
+            out.flush();
+        } catch (Throwable ignored) {
+            // 连写日志都失败就算了，别在兜底里再抛异常
+        }
+    }
+
+    private String readText(File file) {
+        try (InputStream in = new FileInputStream(file)) {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[4096];
+            int read;
+            while ((read = in.read(chunk)) > 0) {
+                buffer.write(chunk, 0, read);
+                if (buffer.size() > 8000) {
+                    break; // 只要够看懂原因就行
+                }
+            }
+            return buffer.toString("UTF-8");
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /** 启动阶段就失败时：不闪退，直接把堆栈铺满屏幕（可长按选择文字） */
+    private void showFatalError(Throwable error) {
+        Log.e(TAG, "启动失败", error);
+        saveCrash(error);
+        String detail = Log.getStackTraceString(error);
+
+        TextView text = new TextView(this);
+        text.setText("云曰 启动失败\n\n" + detail
+                + "\n\n把这段文字截图反馈即可。\n"
+                + "如果是 WebView 相关错误，请到应用商店更新「Android System WebView」后重试。");
+        text.setTextSize(11f);
+        text.setTextColor(0xFFFFE0E0);
+        text.setBackgroundColor(0xFF1A1010);
+        text.setPadding(32, 120, 32, 32);
+        text.setTextIsSelectable(true);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(0xFF1A1010);
+        scroll.addView(text, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+        setContentView(scroll);
+    }
+
+    /** 上次启动崩溃过的话，把原因显示在页面顶部，点一下关闭 */
+    private void showPreviousCrashIfAny() {
+        File file = crashFile();
+        if (!file.exists()) {
+            return;
+        }
+        String text = readText(file);
+        //noinspection ResultOfMethodCallIgnored
+        file.delete();
+        if (text == null || text.trim().isEmpty() || rootView == null) {
+            return;
+        }
+
+        TextView banner = new TextView(this);
+        banner.setText("上次启动时崩溃了，下面是原因（点一下关闭）\n\n"
+                + (text.length() > 4000 ? text.substring(0, 4000) : text));
+        banner.setTextSize(10f);
+        banner.setTextColor(0xFFFFD9D9);
+        banner.setBackgroundColor(0xF21A1010);
+        banner.setPadding(24, 120, 24, 24);
+        banner.setTextIsSelectable(true);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP);
+        rootView.addView(banner, params);
+        banner.setOnClickListener(v -> rootView.removeView(banner));
+    }
+
+    /** WebView 渲染进程崩溃后重建一个，避免整个 App 被杀掉 */
+    private void rebuildWebView() {
+        WebView old = webView;
+        webView = null;
+        if (old != null) {
+            try {
+                if (rootView != null) {
+                    rootView.removeView(old);
+                }
+                old.removeJavascriptInterface("AndroidBridge");
+                old.setWebChromeClient(null);
+                old.setWebViewClient(null);
+                old.destroy();
+            } catch (Throwable e) {
+                Log.w(TAG, "销毁旧 WebView 失败", e);
+            }
+        }
+        if (rootView == null) {
+            return;
+        }
+        try {
+            webView = buildWebView();
+            rootView.addView(webView, 0, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT));
+            webView.loadUrl(START_URL);
+        } catch (Throwable e) {
+            showFatalError(e);
+        }
     }
 }
