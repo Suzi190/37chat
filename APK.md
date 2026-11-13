@@ -176,9 +176,23 @@ gradle assembleRelease    # 产物：android/app/build/outputs/apk/release/app-r
    （这个模式下 IndexedDB 不可用，只当兜底）。
 5. **开屏自检**：页面 `<head>` 最前面注入了一段纯 ES5 脚本，卡在开屏时会把原因写在
    「37Chat / 正在加载数据」那行字的位置上，红字，形如
-   `启动脚本出错：…` / `初始化失败：…` / `初始化卡住了（8 秒未完成）… | WebView 120 | https://localhost/index.html`。
+   `启动脚本出错：…` / `初始化失败：…` / `IndexedDB 无响应（可能被系统/隐私空间禁用）…` /
+   `初始化卡住了（8 秒未完成）… | WebView 120 | https://localhost/index.html`。
    看到红字直接截图即可。另外打包时开屏大字已经从 37Chat 改成「云曰」
    （Dexie 库名 `37ChatDB` 保持不动，否则等于清空用户数据）。
+6. **白屏卡开屏的真凶往往是内联脚本语法错误**。2026-11-13 修掉的那次就是：
+   往 `app/index.html` 里插「安卓壳适配」代码时漏了一个 `</script>`，浏览器把紧随其后的
+   `<!-- 安卓壳适配 … -->` HTML 注释和第二个 `<script>` 全吞进了主脚本，
+   1.4MB 主脚本报 `SyntaxError: Invalid or unexpected token`（全角括号），
+   一行 JS 都没执行 —— 所以永远停在开屏，且看起来「什么错都没有」。
+   这类错误浏览器只吐一句 `SyntaxError`，肉眼极难发现，所以加了一道硬检查：
+
+   ```bash
+   node tools/check-html-syntax.mjs   # 用 V8 把每段内联 <script> 都编译一遍
+   ```
+
+   它已经接进 CI（`校验内联脚本语法` 步骤）：语法不过就直接红叉，不会再产出白屏包。
+   手动改完 `app/index.html` 后建议先跑一遍。
 
 如果仍然直接闪退（连错误页都来不及显示），那就是进程级/native 崩溃，需要系统日志：
 

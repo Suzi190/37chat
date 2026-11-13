@@ -7,6 +7,7 @@ on:
       - 'app/**'
       - 'android/**'
       - 'tools/prepare-apk-assets.mjs'
+      - 'tools/check-html-syntax.mjs'
       - '.github/workflows/android.yml'
   pull_request:
     paths:
@@ -48,6 +49,11 @@ jobs:
       # 把 app/ 里的网页、vendor 资源同步进 assets/www，并给 viewport 打补丁
       - name: 同步 Web 资源
         run: node tools/prepare-apk-assets.mjs
+
+      # 内联脚本语法自检：漏写一个 </script> 就会让 1.4MB 主脚本整体变成语法错误，
+      # 页面一行 JS 都跑不起来（白屏卡开屏），而且浏览器不给任何提示，所以卡在这里。
+      - name: 校验内联脚本语法
+        run: node tools/check-html-syntax.mjs
 
       - name: 配置 Gradle
         uses: gradle/actions/setup-gradle@v3
