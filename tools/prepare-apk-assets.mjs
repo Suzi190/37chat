@@ -92,6 +92,33 @@ const DIAG_SCRIPT = `<script>/* __YUNYUE_BOOT_DIAG__ */
         paint('依赖没加载出来：' + miss.join('、') + ' | ' + env(), '#c62828');
       }
     }, 2000);
+    // 3 秒自检：真正打开一次 IndexedDB。有些 ROM / 隐私空间里 indexedDB 对象存在但请求永远不回调，
+    // 表现就是 loadData() 永不返回、开屏一直转圈，而且不会报错——这里把它挖出来。
+    setTimeout(function () {
+      var splash2 = document.getElementById('app-splash-screen');
+      if (!splash2 || splash2.classList.contains('fade-out') || painted) { return; }
+      try {
+        var settled = false;
+        var probe = window.indexedDB.open('__yunyue_probe__');
+        probe.onsuccess = function () {
+          settled = true;
+          try { probe.result.close(); } catch (e) { }
+          try { window.indexedDB.deleteDatabase('__yunyue_probe__'); } catch (e) { }
+        };
+        probe.onerror = function () {
+          settled = true;
+          paint('IndexedDB 打不开：' + ((probe.error && probe.error.name) || '未知') + ' | ' + env(), '#c62828');
+        };
+        probe.onblocked = function () { settled = true; };
+        setTimeout(function () {
+          if (!settled && !painted) {
+            paint('IndexedDB 无响应（可能被系统/隐私空间禁用），数据没法读写 | ' + env(), '#c62828');
+          }
+        }, 4000);
+      } catch (e) {
+        paint('IndexedDB 不可用：' + e + ' | ' + env(), '#c62828');
+      }
+    }, 3000);
     setTimeout(function () {
       var splash = document.getElementById('app-splash-screen');
       if (!splash || splash.classList.contains('fade-out')) { return; }
