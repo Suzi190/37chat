@@ -1764,6 +1764,10 @@
             padding: 15px 7px;
             overflow-y: auto;
             overflow-x: hidden;
+            /* 关掉滚动锚定。容器高度每帧都在变（键盘动画），Chromium 默认会在布局后
+               自己调 scrollTop 去「保持锚点」，正好和页面里每帧设的 scrollTop = scrollHeight
+               打架 —— 两边各拉一把，屏幕上就是消息区上下乱跳。 */
+            overflow-anchor: none;
             /* 【核心修改】禁止水平滚动，超出屏幕宽度的部分直接截断隐藏 */
             display: flex;
             flex-direction: column;
@@ -14224,28 +14228,109 @@
         // Java 逐帧把键盘高度（dp，1 CSS px = 1 dp）写进 --kb，页面只改这一个变量，
         // 由 CSS 把 .chat-main-area 的 padding-bottom 撑出来，消息列表和输入栏自己就上去了。
         // 全程不动 WebView 尺寸，所以不会触发 Chromium 的 resize 节流，也不会牵动壁纸。
-        window.__appKeyboardInset = function (dp) {
+        //
+        // 「输入框乱跳」的两个来源在这里堵掉：
+        //   1. evaluateJavascript 是异步投递的，晚到的旧帧会让 --kb 先升、再降、再升（来回翻）。
+        //      Java 带一个自增序号过来，序号不比上一个小就整帧丢掉。
+        //   2. 部分 ROM 的 onProgress 会给出突跳值（一帧从 0 到 344），看起来就是「闪一下」。
+        //      所以真正写进 CSS 的值由 rAF 逐帧逼近目标，单帧位移不超过 dt*4px。
+        const kbState = {
+            seq: -1, target: 0, shown: 0, dir: 0, raf: 0, t: 0,
+            calls: 0, dropped: 0, rev: 0, maxJump: 0, trace: []
+        };
+
+        const kbWrite = (px) => {
             const doc = document.documentElement;
-            const px = Math.max(0, Number(dp) || 0);
-            const next = px > 0.5 ? px.toFixed(2) + 'px' : '0px';
-            if (doc.style.getPropertyValue('--kb') === next) return;
-            const box = document.getElementById('chat-messages');
-            // 变化之前是不是贴着底。注意不能直接用 keepChatScrollAtBottom 判断：
-            // 它留了 160px 的容忍，而键盘一次性跳到 344px 时（Android 10 没有逐帧动画）
-            // 差值会超过容忍，结果就不贴底了，看起来又是「猛地跳一下」。
-            const wasAtBottom = box ? box.scrollHeight - box.scrollTop - box.clientHeight <= 32 : false;
             // 键盘在场时挂个类：输入栏底部的 safe-area 留白要让位给键盘，否则输入框悬空一条缝。
             doc.classList.toggle('kb-open', px > 0.5);
-            doc.style.setProperty('--kb', next);
-            if (box) {
-                if (wasAtBottom) {
-                    // 上面刚改过变量，这里读 scrollHeight 会顺带把布局算完，同一帧就能贴到底
-                    box.scrollTop = box.scrollHeight;
-                } else {
-                    // 用户正在翻历史，别抢他的滚动条
-                    keepChatScrollAtBottom();
+            doc.style.setProperty('--kb', px > 0.5 ? px.toFixed(2) + 'px' : '0px');
+            const box = document.getElementById('chat-messages');
+            if (!box) return;
+            // 变化之前是不是贴着底。不能直接用 keepChatScrollAtBottom 判断：它留了 160px 的容忍，
+            // 键盘一次性跳到 344px 时（Android 10 没有逐帧动画）差值会超过容忍，结果就不贴底了。
+            if (box.scrollHeight - box.scrollTop - box.clientHeight <= 32) {
+                // 上面刚改过变量，这里读 scrollHeight 会顺带把布局算完，同一帧就能贴到底
+                box.scrollTop = box.scrollHeight;
+            } else {
+                // 用户正在翻历史，别抢他的滚动条
+                keepChatScrollAtBottom();
+            }
+        };
+
+        const kbStep = () => {
+            kbState.raf = 0;
+            const now = (window.performance && performance.now) ? performance.now() : Date.now();
+            const dt = Math.min(32, Math.max(8, kbState.t ? now - kbState.t : 16));
+            kbState.t = now;
+            const gap = kbState.target - kbState.shown;
+            if (Math.abs(gap) < 0.5) {
+                if (kbState.shown !== kbState.target) {
+                    kbState.shown = kbState.target;
+                    kbWrite(kbState.shown);
+                }
+                if (kbState.shown === 0) kbDiagReport();
+                return;
+            }
+            // 每毫秒 4px 的上限：16ms 一帧最多 64px。真实键盘动画 250ms 走 344px 约 22px/帧，
+            // 跟手完全不受影响；但任何突跳/乱序都会被摊成几帧，屏幕上不再有「闪」。
+            const maxStep = Math.max(8, dt * 4);
+            const before = kbState.shown;
+            kbState.shown += Math.sign(gap) * Math.min(Math.abs(gap), maxStep);
+            const dir = Math.sign(kbState.shown - before);
+            if (dir !== 0) {
+                if (kbState.dir !== 0 && dir !== kbState.dir) kbState.rev += 1;
+                kbState.dir = dir;
+                if (Math.abs(kbState.shown - before) > kbState.maxJump) {
+                    kbState.maxJump = Math.abs(kbState.shown - before);
                 }
             }
+            kbState.trace.push(Math.round(kbState.shown));
+            if (kbState.trace.length > 24) kbState.trace.shift();
+            kbWrite(kbState.shown);
+            kbState.raf = requestAnimationFrame(kbStep);
+        };
+
+        const kbKick = () => {
+            if (!kbState.raf) kbState.raf = requestAnimationFrame(kbStep);
+        };
+
+        // 壳里（debug 包）键盘收起后在页面顶部打一行数字，用来判定「跳」到底出在哪一环：
+        // calls 多 + rev 0  = Java 每帧都给值、页面也平滑，画面还跳就是别的东西在动；
+        // rev > 0           = 送来的值本身在来回翻（已由序号+限速摊平，值为真实方向反转）；
+        // dropped > 0       = 有旧帧晚到（乱序），被丢掉了。
+        let kbDiagTimer = 0;
+        function kbDiagReport() {
+            if (!window.__kbDiagOn) return;
+            const d = kbState;
+            if (!d.calls) return;
+            const head = 'kb diag  calls=' + d.calls + ' dropped=' + d.dropped
+                + ' rev=' + d.rev + ' maxJump=' + Math.round(d.maxJump) + 'px';
+            let el = document.getElementById('kb-diag');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'kb-diag';
+                el.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483000;'
+                    + 'background:rgba(180,20,20,.94);color:#fff;font:11px/1.4 monospace;'
+                    + 'padding:6px 8px;white-space:pre-wrap;word-break:break-all;display:none;';
+                document.body.appendChild(el);
+            }
+            el.textContent = head + '\n' + 'trace: ' + d.trace.join(' ');
+            el.style.display = 'block';
+            clearTimeout(kbDiagTimer);
+            kbDiagTimer = setTimeout(() => { el.style.display = 'none'; }, 6000);
+            d.calls = 0; d.dropped = 0; d.rev = 0; d.maxJump = 0; d.trace = [];
+        }
+
+        window.__appKeyboardInset = function (dp, seq) {
+            kbState.calls += 1;
+            const px = Math.max(0, Number(dp) || 0);
+            const s = Number(seq);
+            if (Number.isFinite(s)) {
+                if (s <= kbState.seq) { kbState.dropped += 1; return; }
+                kbState.seq = s;
+            }
+            kbState.target = px;
+            kbKick();
         };
         const applyAppHeight = () => {
             // 每次都以「现在有没有 android-shell 类」为准，而不是启动时判一次：

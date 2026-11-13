@@ -103,13 +103,30 @@ const STEPS = 20;
   const api = await send('Runtime.evaluate', { returnByValue: true, expression: 'typeof window.__appKeyboardInset' });
   console.log('typeof window.__appKeyboardInset =', api.result.result.value);
 
+  // 键盘现在由页面内的 rAF 逐帧逼近目标（单帧最多 dt*4px），
+  // 所以「设置完立刻断言」不再成立，必须先等它收敛到位再读。
+  const probeRaw = async () => {
+    const r = await send('Runtime.evaluate', { returnByValue: true, expression: PROBE });
+    return JSON.parse(r.result.result.value);
+  };
+  const setKb = async (kb, maxMs = 1500) => {
+    await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${kb});` });
+    const t0 = Date.now();
+    let last = await probeRaw();
+    while (Date.now() - t0 < maxMs) {
+      const shown = Math.abs(Number.parseFloat(last.kb || '0') || 0);
+      if (Math.abs(shown - kb) <= 0.6) return last;
+      await sleep(30);
+      last = await probeRaw();
+    }
+    return last;
+  };
+
+
   const rows = [];
   const step = async (kb) => {
     // 鐪熸満涓婅繖涓€姝ユ槸 Java 鍦?onProgress 閲岃皟 evaluateJavascript锛堝悓涓€甯э級
-    await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${kb});` });
-    await sleep(34);
-    const r = await send('Runtime.evaluate', { returnByValue: true, expression: PROBE });
-    rows.push(JSON.parse(r.result.result.value));
+    rows.push(await setKb(kb));
   };
 
   for (let i = 0; i <= STEPS; i += 1) await step((KB_MAX * i) / STEPS);
@@ -117,29 +134,58 @@ const STEPS = 20;
 
   // 涓€娆℃€ц烦鍙樺満鏅細Android 10 娌℃湁閫愬抚鍔ㄧ敾銆佷釜鍒?ROM 涔熶笉娲惧彂涓棿杩涘害锛?
   // 閿洏楂樺害鏄粠 0 鐩存帴璺冲埌 344 鐨勩€傝繖绉嶃€屼竴姝ュ埌浣嶃€嶅悓鏍峰繀椤昏创搴曘€佷笉鑳借惤鍚庛€?
-  await step(0);
-  await step(KB_MAX);
-  const jumpIn = rows[rows.length - 1];
-  await step(0);
-  const jumpOut = rows[rows.length - 1];
+  await setKb(0);
+  const jumpStart = await probeRaw();
+  // 一步跳到 344（Android 10 / 部分 ROM 不给中间帧）：单帧最多 dt*4px，
+  // 必须在几帧里摊开，不能一帧闪到底；中间帧自身也要自洽（不能撕裂）。
+  await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${KB_MAX});` });
+  await sleep(34);
+  const jumpMid = await probeRaw();
+  const jumpIn = await setKb(KB_MAX);
+  const jumpOut = await setKb(0);
   const jumpGap = Math.abs(jumpIn.inputBottom - (jumpIn.inner - KB_MAX));
-  const jumpOk = jumpGap <= 1 && jumpIn.atBottom <= 2 && jumpOut.atBottom <= 2;
+  const midKb = Math.abs(Number.parseFloat(jumpMid.kb || '0') || 0);
+  const midSelf = Math.abs(jumpMid.inputBottom - (jumpMid.inner - midKb)) <= 1;
+  const midMoved = jumpMid.inputBottom < jumpStart.inputBottom - 1;
+  const midNotDone = midKb > 1 && midKb < KB_MAX - 40;
+  const jumpOk = jumpGap <= 1 && jumpIn.atBottom <= 2 && jumpOut.atBottom <= 2
+    && midSelf && midMoved && midNotDone;
+  console.log(`jump 0->${KB_MAX}: input.bottom=${jumpIn.inputBottom} expect=${jumpIn.inner - KB_MAX} atBottom=${jumpIn.atBottom} / back atBottom=${jumpOut.atBottom}`);
+  console.log(`  step-limit @1frame: kb=${midKb.toFixed(0)} (expect 1..${KB_MAX - 40}) self-consistent=${midSelf} ${jumpOk ? 'OK' : 'FAIL'}`);
   console.log(`jump 0->${KB_MAX}: input.bottom=${jumpIn.inputBottom} expect=${jumpIn.inner - KB_MAX} atBottom=${jumpIn.atBottom} / back atBottom=${jumpOut.atBottom} ${jumpOk ? 'OK' : 'FAIL'}`);
 
   // 銆屾洿澶氬姛鑳姐€嶉潰鏉匡細鎵撳紑鏃惰璐村埌閿洏涓婃柟锛屽叧鍥炲幓涔嬪悗蹇呴』閲嶆柊钘忓埌瑙嗗彛澶栵紙涓嶈兘闇蹭竴鎴級
+  // 序号防乱序：键盘动画期间 evaluateJavascript 一帧一发，晚到的旧帧必须被丢掉，
+  // 否则 --kb 会「升—降—升」来回翻，屏幕上就是输入框乱跳。
+  await setKb(0);
+  await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${KB_MAX}, 7000);` });
+  await sleep(300);
+  const seqHi = await probeRaw();
+  await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(0, 6999);` });
+  await sleep(300);
+  const seqStale = await probeRaw();
+  const seqHiKb = Math.abs(Number.parseFloat(seqHi.kb || '0') || 0);
+  const seqStaleKb = Math.abs(Number.parseFloat(seqStale.kb || '0') || 0);
+  const seqOk = Math.abs(seqHiKb - KB_MAX) <= 1 && seqStaleKb >= KB_MAX - 1;
+  await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(0, 7001);` });
+  await sleep(400);
+  console.log(`stale frame: new kb=${seqHiKb.toFixed(0)} then stale(seq-1) kb=${seqStaleKb.toFixed(0)} (expect stay ${KB_MAX}) ${seqOk ? 'OK' : 'FAIL'}`);
+
+  // Chromium 的滚动锚定会在布局后自己改 scrollTop，和页面每帧的 scrollTop = scrollHeight 抢方向盘
+  const anchorRes = await send('Runtime.evaluate', { returnByValue: true, expression: `getComputedStyle(document.getElementById('chat-messages')).overflowAnchor` });
+  const anchorOk = anchorRes.result.result.value === 'none';
+  console.log(`overflow-anchor: ${anchorRes.result.result.value} (expect none) ${anchorOk ? 'OK' : 'FAIL'}`);
+
   const probeNow = async () => {
     const r = await send('Runtime.evaluate', { returnByValue: true, expression: PROBE });
     return JSON.parse(r.result.result.value);
   };
   await send('Runtime.evaluate', { expression: `document.getElementById('page-chat').classList.add('actions-panel-open');` });
   await sleep(700); // 绛?0.4s 鐨?transform 杩囨浮璺戝畬
-  await send('Runtime.evaluate', { expression: 'window.__appKeyboardInset(0);' });
-  await sleep(60);
-  const pOpen0 = await probeNow();
-  await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${KB_MAX});` });
-  await sleep(60);
-  const pOpenKb = await probeNow();
-  await send('Runtime.evaluate', { expression: `document.getElementById('page-chat').classList.remove('actions-panel-open');window.__appKeyboardInset(0);` });
+  const pOpen0 = await setKb(0);
+  const pOpenKb = await setKb(KB_MAX);
+  await send('Runtime.evaluate', { expression: `document.getElementById('page-chat').classList.remove('actions-panel-open');` });
+  await setKb(0);
   await sleep(700);
   const pBack = await probeNow();
   const panelOk = Math.abs(pOpen0.panelLift) <= 1                 // 鏃犻敭鐩橈細闈㈡澘搴曡竟璐撮〉闈㈠簳
@@ -154,14 +200,12 @@ const STEPS = 20;
     const r = await send('Runtime.evaluate', { returnByValue: true, expression: `(()=>{const e=document.querySelector('#page-chat .chat-input-area');return JSON.stringify({pad: Math.round(parseFloat(getComputedStyle(e).paddingBottom)), kbOpen: document.documentElement.classList.contains('kb-open')});})()` });
     return JSON.parse(r.result.result.value);
   };
-  await send('Runtime.evaluate', { expression: 'window.__appKeyboardInset(0);' });
-  await sleep(60);
+  await setKb(0);
   const padClosed = await padOf();
-  await send('Runtime.evaluate', { expression: `window.__appKeyboardInset(${KB_MAX});` });
-  await sleep(60);
+  await setKb(KB_MAX);
   const padOpen = await padOf();
-  await send('Runtime.evaluate', { expression: `document.getElementById('test-safe-area').remove();window.__appKeyboardInset(0);` });
-  await sleep(60);
+  await send('Runtime.evaluate', { expression: `document.getElementById('test-safe-area').remove();` });
+  await setKb(0);
   const safeOk = Math.abs(padClosed.pad - 44) <= 1 && Math.abs(padOpen.pad - 10) <= 1 && padOpen.kbOpen === true;
   console.log(`safe-area: kb=0 pad=${padClosed.pad}(expect 44)  kb=${KB_MAX} pad=${padOpen.pad}(expect 10)  kb-open=${padOpen.kbOpen} ${safeOk ? 'OK' : 'FAIL'}`);
 
@@ -169,9 +213,8 @@ const STEPS = 20;
   await send('Runtime.evaluate', { expression: `(()=>{
     document.getElementById('page-chat').classList.remove('active');
     document.getElementById('page-chat-summary').classList.add('active');
-    window.__appKeyboardInset(${KB_MAX});
   })();` });
-  await sleep(80);
+  await setKb(KB_MAX);
   const pagePad = await (async () => {
     const r = await send('Runtime.evaluate', { returnByValue: true, expression: `(()=>{const p=document.getElementById('page-chat-summary');return JSON.stringify({pad: Math.round(parseFloat(getComputedStyle(p).paddingBottom)), chatPad: Math.round(parseFloat(getComputedStyle(document.getElementById('page-chat')).paddingBottom))});})()` });
     return JSON.parse(r.result.result.value);
@@ -200,9 +243,8 @@ const STEPS = 20;
     document.querySelector('.modal-overlay').style.display='';
     document.getElementById('page-chat-summary').classList.remove('active');
     document.getElementById('page-chat').classList.add('active');
-    window.__appKeyboardInset(0);
   })();` });
-  await sleep(80);
+  await setKb(0);
   console.log(`other pages: padding-bottom=${pagePad.pad}(expect ${KB_MAX}) chat-page=${pagePad.chatPad}(expect 0) ${pageOk ? 'OK' : 'FAIL'}  | modal overlay=${modalPad.pad}(expect ${KB_MAX}) ${modalOk ? 'OK' : 'FAIL'}`);
   console.log(`video-call: container h=${vc.h}(expect <=${vc.inner - KB_MAX - 40}) bottom=${vc.bottom}(expect <=${vc.inner - KB_MAX}) ${vcOk ? 'OK' : 'FAIL'}`);
 
@@ -235,13 +277,15 @@ const STEPS = 20;
   console.log(`box steady: ${rows.every((r) => r.containerH === base.containerH && r.mainTop === base.mainTop && r.mainH === base.mainH) ? 'yes (viewport & wallpaper never move)' : 'NO'}`);
   console.log(`monotonic: ${nonMono === 0 ? 'yes (no bounce back)' : 'NO (' + nonMono + ' reversals)'}`);
   console.log(`no leak into keyboard area: ${leaks === 0 ? 'yes' : 'NO (' + leaks + ' frames leaked)'}`);
-  console.log(bad === 0 && nonMono === 0 && jumpOk && panelOk && safeOk && pageOk && modalOk && vcOk && leaks === 0
-    ? `\n[PASS] ${rows.length} frames: input tracks keyboard, wallpaper frozen, panel never leaks, safe-area yields, other pages & modals clear the keyboard`
-    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals, jump=${jumpOk}, panel=${panelOk}, safe=${safeOk}, pages=${pageOk}, modal=${modalOk}, vc=${vcOk}, leaks=${leaks}`);
+  const allOk = bad === 0 && nonMono === 0 && jumpOk && panelOk && safeOk && pageOk
+    && modalOk && vcOk && leaks === 0 && seqOk && anchorOk;
+  console.log(allOk
+    ? `\n[PASS] ${rows.length} frames: input tracks keyboard (step-limited, stale frames dropped), wallpaper frozen, panel never leaks, safe-area yields, other pages & modals clear the keyboard`
+    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals, jump=${jumpOk}, panel=${panelOk}, safe=${safeOk}, pages=${pageOk}, modal=${modalOk}, vc=${vcOk}, leaks=${leaks}, seq=${seqOk}, anchor=${anchorOk}`);
 
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(OUT, 'shot-chat-kb.png'), Buffer.from(shot.result.data, 'base64'));
 
   ws.close(); child.kill(); server.close();
-  process.exit(bad === 0 && nonMono === 0 && jumpOk && panelOk && safeOk && pageOk && modalOk && vcOk && leaks === 0 ? 0 : 1);
+  process.exit(allOk ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });

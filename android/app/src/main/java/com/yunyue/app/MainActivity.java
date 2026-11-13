@@ -82,6 +82,9 @@ public class MainActivity extends Activity {
     /** 软键盘顶起来的高度（px）：全屏壳不跟系统 resize，得自己把 WebView 让开 */
     private int imeBottomPx = 0;
 
+    /** 键盘高度推送的自增序号：页面按它丢弃晚到的旧帧，避免 --kb 来回翻 */
+    private int imeSeq = 0;
+
     /** 进程级崩溃兜底：只装一次，存下来给下次启动看 */
     private static Thread.UncaughtExceptionHandler previousCrashHandler;
 
@@ -312,16 +315,22 @@ public class MainActivity extends Activity {
         pushKeyboardInsetToPage();
     }
 
-    /** 把当前键盘高度换算成 dp（= 页面里的 CSS px）告诉页面 */
+    /**
+     * 把当前键盘高度换算成 dp（= 页面里的 CSS px）告诉页面。
+     *
+     * 带一个自增序号：evaluateJavascript 是异步投递的，键盘动画期间一帧一发，
+     * 万一有旧帧后到，页面按序号丢弃它，--kb 就不会先升后降再升地来回翻（那是「输入框乱跳」）。
+     */
     private void pushKeyboardInsetToPage() {
         WebView view = webView;
         if (view == null) {
             return;
         }
+        imeSeq += 1;
         String dp = String.format(Locale.US, "%.2f", imeBottomPx / density());
         view.evaluateJavascript(
                 "(function(){try{if(window.__appKeyboardInset){window.__appKeyboardInset(" + dp
-                        + ");}}catch(e){}})();",
+                        + "," + imeSeq + ");}}catch(e){}})();",
                 null);
     }
 
@@ -363,12 +372,19 @@ public class MainActivity extends Activity {
         // 键盘高度也一起补一次：页面重新加载后 --kb 会回到 0，这里把它恢复成当前真实值，
         // 免得「键盘还开着、输入栏被压在键盘后面」。
         String kb = String.format(Locale.US, "%.2f", imeBottomPx / d);
+        imeSeq += 1;
         String js = "(function(){try{var r=document.documentElement;"
                 + "r.classList.add('android-shell');"
                 + "r.style.setProperty('--android-inset-top','" + dp + "px');"
-                + "if(window.__appKeyboardInset){window.__appKeyboardInset(" + kb + ");}"
+                + (debuggable() ? "window.__kbDiagOn=true;" : "")
+                + "if(window.__appKeyboardInset){window.__appKeyboardInset(" + kb + "," + imeSeq + ");}"
                 + "}catch(e){}})();";
         view.evaluateJavascript(js, null);
+    }
+
+    /** debug 包里打开键盘诊断（键盘收起后页面顶部显示一行数字），正式包不显示 */
+    private boolean debuggable() {
+        return (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     /**
