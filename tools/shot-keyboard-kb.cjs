@@ -113,6 +113,17 @@ const STEPS = 20;
   for (let i = 0; i <= STEPS; i += 1) await step((KB_MAX * i) / STEPS);
   for (let i = STEPS; i >= 0; i -= 1) await step((KB_MAX * i) / STEPS);
 
+  // 一次性跳变场景：Android 10 没有逐帧动画、个别 ROM 也不派发中间进度，
+  // 键盘高度是从 0 直接跳到 344 的。这种「一步到位」同样必须贴底、不能落后。
+  await step(0);
+  await step(KB_MAX);
+  const jumpIn = rows[rows.length - 1];
+  await step(0);
+  const jumpOut = rows[rows.length - 1];
+  const jumpGap = Math.abs(jumpIn.inputBottom - (jumpIn.inner - KB_MAX));
+  const jumpOk = jumpGap <= 1 && jumpIn.atBottom <= 2 && jumpOut.atBottom <= 2;
+  console.log(`jump 0->${KB_MAX}: input.bottom=${jumpIn.inputBottom} expect=${jumpIn.inner - KB_MAX} atBottom=${jumpIn.atBottom} / back atBottom=${jumpOut.atBottom} ${jumpOk ? 'OK' : 'FAIL'}`);
+
   const base = rows[0];
   let bad = 0;
   rows.forEach((r, i) => {
@@ -127,7 +138,7 @@ const STEPS = 20;
   });
 
   const up = rows.slice(0, STEPS + 1).map((r) => r.inputBottom);
-  const down = rows.slice(STEPS + 1).map((r) => r.inputBottom);
+  const down = rows.slice(STEPS + 1, 2 * STEPS + 2).map((r) => r.inputBottom);
   let nonMono = 0;
   for (let i = 1; i < up.length; i += 1) if (up[i] > up[i - 1] + 1) nonMono += 1;
   for (let i = 1; i < down.length; i += 1) if (down[i] < down[i - 1] - 1) nonMono += 1;
@@ -135,13 +146,13 @@ const STEPS = 20;
   console.log(`\nSHELL android-shell=${base.shell} AndroidBridge=${base.bridge}`);
   console.log(`box steady: ${rows.every((r) => r.containerH === base.containerH && r.mainTop === base.mainTop && r.mainH === base.mainH) ? 'yes (viewport & wallpaper never move)' : 'NO'}`);
   console.log(`monotonic: ${nonMono === 0 ? 'yes (no bounce back)' : 'NO (' + nonMono + ' reversals)'}`);
-  console.log(bad === 0 && nonMono === 0
+  console.log(bad === 0 && nonMono === 0 && jumpOk
     ? `\n[PASS] ${rows.length} frames: input tracks keyboard exactly, wallpaper/container frozen, no bounce`
-    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals`);
+    : `\n[FAIL] ${bad} frames off, ${nonMono} reversals, jump=${jumpOk}`);
 
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(OUT, 'shot-chat-kb.png'), Buffer.from(shot.result.data, 'base64'));
 
   ws.close(); child.kill(); server.close();
-  process.exit(bad === 0 && nonMono === 0 ? 0 : 1);
+  process.exit(bad === 0 && nonMono === 0 && jumpOk ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });

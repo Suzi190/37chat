@@ -14196,9 +14196,21 @@
             const px = Math.max(0, Number(dp) || 0);
             const next = px > 0.5 ? px.toFixed(2) + 'px' : '0px';
             if (doc.style.getPropertyValue('--kb') === next) return;
+            const box = document.getElementById('chat-messages');
+            // 变化之前是不是贴着底。注意不能直接用 keepChatScrollAtBottom 判断：
+            // 它留了 160px 的容忍，而键盘一次性跳到 344px 时（Android 10 没有逐帧动画）
+            // 差值会超过容忍，结果就不贴底了，看起来又是「猛地跳一下」。
+            const wasAtBottom = box ? box.scrollHeight - box.scrollTop - box.clientHeight <= 32 : false;
             doc.style.setProperty('--kb', next);
-            // 消息区被压矮之后，原来贴着底的那一条要重新贴到底，不然会看起来「往上跳」
-            keepChatScrollAtBottom();
+            if (box) {
+                if (wasAtBottom) {
+                    // 上面刚改过变量，这里读 scrollHeight 会顺带把布局算完，同一帧就能贴到底
+                    box.scrollTop = box.scrollHeight;
+                } else {
+                    // 用户正在翻历史，别抢他的滚动条
+                    keepChatScrollAtBottom();
+                }
+            }
         };
         const applyAppHeight = () => {
             // 每次都以「现在有没有 android-shell 类」为准，而不是启动时判一次：
