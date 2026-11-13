@@ -1,0 +1,64 @@
+plugins {
+    id 'com.android.application'
+}
+
+// 有签名密钥就出正式签名包，没有就用 debug 签名（照样能装）
+def keystorePath = System.getenv('YUNYUE_KEYSTORE')
+
+android {
+    namespace 'com.yunyue.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.yunyue.app'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    // 只有配置了密钥才声明 release 签名，否则整个工程只用 debug 签名
+    signingConfigs {
+        if (keystorePath) {
+            release {
+                storeFile file(keystorePath)
+                storePassword System.getenv('YUNYUE_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('YUNYUE_KEY_ALIAS')
+                keyPassword System.getenv('YUNYUE_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            // 带 .debug 后缀，可以和管理端/正式包同时装在一台手机上
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        encoding 'UTF-8'
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+// release 用哪个签名：有密钥用 release，没有退回 debug
+android.buildTypes.release.signingConfig =
+        keystorePath ? android.signingConfigs.release : android.signingConfigs.debug
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// 没有额外依赖：整包只有 WebView + 系统 API

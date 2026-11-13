@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 图标底图颜色，取自插画最暗处，圆形/圆角遮罩时不会出现亮边 -->
+    <color name="ic_launcher_background">#0E0C0A</color>
+    <color name="window_background">#0E0C0A</color>
+</resources>

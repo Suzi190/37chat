@@ -1,0 +1,4 @@
+// 云曰 Android 壳：只有一个最小的 WebView 工程，APK 由 GitHub Actions 构建
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}

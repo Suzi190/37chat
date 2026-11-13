@@ -1,0 +1,24 @@
+# Android / Gradle 构建产物
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+# assets/www 是 tools/prepare-apk-assets.mjs 生成的构建产物（CI 与本地打包前都会重新生成）
+android/app/src/main/assets/www/
+android/app/release/
+android/keystore.properties
+*.jks
+*.keystore
+
+# 通用
+.gradle/
+build/
+dist/
+*.iml
+.idea/
+.DS_Store
+Thumbs.db
+node_modules/
+
+# 临时文件
+*.log

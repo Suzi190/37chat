@@ -71,11 +71,13 @@
 
         .status-bar {
             width: 100%;
-            height: 24px;
+            /* 安卓壳：刘海 / 挖孔高度写进 --android-inset-top（Java 侧注入），
+               普通浏览器里回落到 env(safe-area-inset-top)；都没有时仍是 24px */
+            height: calc(24px + var(--android-inset-top, env(safe-area-inset-top, 0px)));
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0 15px;
+            padding: var(--android-inset-top, env(safe-area-inset-top, 0px)) 15px 0;
             background-color: var(--header-bg-color);
             color: var(--text-color);
             font-size: 0.8rem;
@@ -14955,6 +14957,9 @@
 
             pages.forEach(page => page.classList.toggle('active', page.id === pageId));
         };
+
+        // 给 Android 壳 / 左右滑动返回用的页面切换入口（普通浏览器里就是 navigateTo 本身）
+        window.__appNavigateTo = (pageId, context = null) => navigateTo(pageId, context);
 
 
         document.querySelectorAll('.back-button, .home-button:not(.btn-placeholder):not(.btn-chat), .nav-link').forEach(button => {
@@ -43507,7 +43512,153 @@ ${serializedHistory || '无聊天记录作为参考。'}
         // ▲▲▲ 旅游日志核心逻辑结束 ▲▲▲
         // ==========================================
 
+    <!-- ============================================================
+         安卓壳适配（在普通浏览器里这些分支全都不会触发，可放心保留）
+         1) window.__appBack()  —— 原生返回键 / 系统返回手势调用它，返回 false 才退出 App
+         2) 页面左右滑动        —— 返回上一页（桌面上不响应，避免误退出）
+         3) blob: / data: 导出  —— 交给原生写到「下载/云曰」，WebView 自己下不了 blob
+         ============================================================ -->
+    <script>
+        (function () {
+            if (window.__appShellInstalled) return;
+            window.__appShellInstalled = true;
+
+            const bridge = window.AndroidBridge || null;
+            const activePage = () => document.querySelector('.page.active');
+
+            const isVisible = (el) => {
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 2 || rect.height < 2) return false;
+                const style = getComputedStyle(el);
+                return style.display !== 'none' && style.visibility !== 'hidden';
+            };
+
+            /* ---------------- 1. 返回上一页 ---------------- */
+            const goBack = () => {
+                const page = activePage();
+                if (!page || page.id === 'page-home') return false; // 已经在桌面：交给系统退出
+
+                const buttons = page.querySelectorAll('.back-button, .home-button');
+                for (let i = 0; i < buttons.length; i += 1) {
+                    const btn = buttons[i];
+                    if (btn.classList.contains('btn-placeholder') || btn.classList.contains('btn-chat')) continue;
+                    if (!isVisible(btn)) continue;
+                    btn.click(); // 和用户手点返回按钮完全一致（子页面自己的返回逻辑也会执行）
+                    return true;
+                }
+
+                if (typeof window.__appNavigateTo === 'function') {
+                    window.__appNavigateTo('page-home');
+                    return true;
+                }
+                return false;
+            };
+            window.__appBack = goBack;
+
+            /* ---------------- 2. 左右滑动返回 ---------------- */
+            const SWIPE_DISTANCE = 70;
+            const SWIPE_MAX_MS = 700;
+
+            // 手势起点落在这些地方就不接管：输入框、横向可滚动的容器（比如桌面分页）
+            const swipeBlocked = (target) => {
+                for (let node = target; node && node !== document.documentElement; node = node.parentElement) {
+                    if (node.dataset && node.dataset.noBackSwipe !== undefined) return true;
+                    const tag = node.tagName;
+                    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || node.isContentEditable) return true;
+                    const style = getComputedStyle(node);
+                    if ((style.overflowX === 'auto' || style.overflowX === 'scroll')
+                        && node.scrollWidth - node.clientWidth > 8) return true;
+                }
+                return false;
+            };
+
+            let gesture = null;
+
+            document.addEventListener('touchstart', (event) => {
+                if (event.touches.length !== 1) { gesture = null; return; }
+                const touch = event.touches[0];
+                gesture = {
+                    x: touch.clientX,
+                    y: touch.clientY,
+                    at: Date.now(),
+                    blocked: swipeBlocked(event.target),
+                    vertical: false
+                };
+            }, { passive: true });
+
+            document.addEventListener('touchmove', (event) => {
+                if (!gesture || event.touches.length !== 1) return;
+                const touch = event.touches[0];
+                const dx = Math.abs(touch.clientX - gesture.x);
+                const dy = Math.abs(touch.clientY - gesture.y);
+                if (dy > 45 && dy > dx) gesture.vertical = true;
+            }, { passive: true });
+
+            document.addEventListener('touchcancel', () => { gesture = null; }, { passive: true });
+
+            document.addEventListener('touchend', (event) => {
+                const current = gesture;
+                gesture = null;
+                if (!current || current.blocked || current.vertical) return;
+                if (Date.now() - current.at > SWIPE_MAX_MS) return;
+                if (!event.changedTouches || !event.changedTouches.length) return;
+                const touch = event.changedTouches[0];
+                const dx = touch.clientX - current.x;
+                const dy = touch.clientY - current.y;
+                if (Math.abs(dx) < SWIPE_DISTANCE) return;
+                if (Math.abs(dx) < Math.abs(dy) * 1.6) return;
+                goBack(); // 桌面 / 没有上一页时什么都不做，绝不会退出 App
+            }, { passive: true });
+
+            /* ---------------- 3. 导出文件：blob:/data: -> 原生「下载/云曰」 ---------------- */
+            if (!bridge || typeof bridge.beginFile !== 'function') return;
+
+            const toast = (text) => {
+                try { bridge.toast(String(text)); } catch (error) { console.log(text); }
+            };
+
+            const saveBlobUrl = async (url, fileName) => {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const mime = blob.type || 'application/octet-stream';
+                const name = fileName || 'yunyue-backup.json';
+                if (!bridge.beginFile(name, mime)) throw new Error('无法创建文件');
+                const CHUNK = 512 * 1024;
+                for (let offset = 0; offset < blob.size; offset += CHUNK) {
+                    const bytes = new Uint8Array(await blob.slice(offset, offset + CHUNK).arrayBuffer());
+                    let binary = '';
+                    for (let i = 0; i < bytes.length; i += 0x8000) {
+                        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+                    }
+                    if (!bridge.appendFileChunk(name, btoa(binary))) {
+                        bridge.endFile(name);
+                        throw new Error('写入失败');
+                    }
+                }
+                const saved = bridge.endFile(name);
+                toast(saved ? '已导出到 ' + saved : '已导出');
+                return saved;
+            };
+
+            // 页面用 a[download][href=blob:] 导出备份，WebView 原生下载不了，这里接管
+            document.addEventListener('click', (event) => {
+                const target = event.target;
+                if (!target || !target.closest) return;
+                const link = target.closest('a[download]');
+                if (!link) return;
+                const href = link.getAttribute('href') || '';
+                if (!/^(blob|data):/.test(href)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                saveBlobUrl(href, link.getAttribute('download')).catch((error) => {
+                    console.error('导出失败:', error);
+                    toast('导出失败：' + ((error && error.message) || error));
+                });
+            }, true);
+        })();
     </script>
 </body>
+
 
 </html>
