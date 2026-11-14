@@ -2580,6 +2580,157 @@
             resize: vertical;
         }
 
+        /* ===== 世界书条目编辑器（一本世界书 = 多条条目） ===== */
+        #worldbook-modal-panel {
+            max-width: 520px;
+            width: 94%;
+            max-height: 88vh;
+        }
+
+        .worldbook-entries-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 4px 0 10px;
+            font-weight: bold;
+        }
+
+        .worldbook-entries {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .wb-entry {
+            border: 1px solid #e0d8e6;
+            border-radius: 10px;
+            background-color: rgba(255, 255, 255, 0.55);
+            overflow: hidden;
+        }
+
+        .wb-entry.is-disabled {
+            opacity: 0.62;
+        }
+
+        .wb-entry-head {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 8px;
+        }
+
+        .wb-entry-head input[type="text"] {
+            flex: 1;
+            min-width: 0;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background-color: #fff;
+        }
+
+        .wb-entry-badge {
+            flex-shrink: 0;
+            font-size: 0.72rem;
+            color: #8a7f93;
+            background-color: #f2edf6;
+            border-radius: 999px;
+            padding: 2px 8px;
+            white-space: nowrap;
+        }
+
+        .wb-entry-toggle,
+        .wb-entry-delete {
+            flex-shrink: 0;
+            border: none;
+            background: transparent;
+            color: #8a7f93;
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+
+        .wb-entry-delete {
+            color: #c0555b;
+        }
+
+        .wb-entry-toggle i {
+            transition: transform 0.2s ease;
+        }
+
+        .wb-entry.is-open .wb-entry-toggle i {
+            transform: rotate(90deg);
+        }
+
+        .wb-entry-body {
+            display: none;
+            padding: 0 10px 10px;
+            border-top: 1px dashed #e6dfec;
+        }
+
+        .wb-entry.is-open .wb-entry-body {
+            display: block;
+        }
+
+        .wb-entry-body > label {
+            display: block;
+            margin: 8px 0 4px;
+            font-size: 0.82rem;
+            color: #6f6577;
+            font-weight: bold;
+        }
+
+        .wb-entry-body .wb-hint {
+            font-weight: normal;
+            color: #a095a8;
+        }
+
+        .wb-entry-body input[type="text"],
+        .wb-entry-body textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background-color: #fff;
+        }
+
+        .wb-entry-body textarea {
+            resize: vertical;
+            min-height: 90px;
+        }
+
+        .wb-entry-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 8px;
+        }
+
+        .wb-entry-row label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0;
+            font-size: 0.85rem;
+            color: #6f6577;
+        }
+
+        .wb-entry-row input[type="number"] {
+            width: 70px;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+
+        .wb-entry-empty {
+            text-align: center;
+            color: #999;
+            padding: 14px 0;
+            font-size: 0.9rem;
+        }
+
         .avatar-preview {
             width: 80px;
             height: 80px;
@@ -12945,15 +13096,17 @@
         </div>
     </div>
     <div id="worldbook-modal" class="modal-overlay">
-        <div class="modal">
+        <div class="modal" id="worldbook-modal-panel">
             <h2 id="worldbook-modal-title">创建世界设定</h2>
             <form id="worldbook-form" class="modal-body"><input type="hidden" id="worldbook-id">
                 <div class="form-group"><label for="worldbook-name">设定集名称</label><input type="text" id="worldbook-name"
                         required></div>
                 <div class="form-group"><label for="worldbook-folder">文件夹名称 (选填)</label><input type="text"
                         id="worldbook-folder" placeholder="例如：奇幻设定、科幻背景"></div>
-                <div class="form-group"><label for="worldbook-content">内容</label><textarea id="worldbook-content"
-                        required placeholder="可使用 {{char}} 和 {{user}} 占位符"></textarea></div>
+                <div class="worldbook-entries-head"><span>条目 <span id="worldbook-entry-count">0</span> 条</span><button
+                        type="button" id="add-worldbook-entry-btn" class="btn btn-secondary"
+                        style="padding:6px 12px; font-size:.85rem;"><i class="fas fa-plus"></i> 添加条目</button></div>
+                <div id="worldbook-entries" class="worldbook-entries"></div>
             </form>
             <div class="modal-buttons"><button type="button" id="delete-worldbook-btn" class="btn btn-danger"
                     style="display:none; margin-right: auto;">删除</button><button type="button" id="cancel-worldbook-btn"
@@ -15573,7 +15726,7 @@
                 // 核心优化 2：将加载的数据安全地赋值给 state，如果数据库为空则使用空数组
                 state.characters = characters || [];
                 state.userPersonas = userPersonas || [];
-                state.worldBooks = worldBooks || [];
+                state.worldBooks = (worldBooks || []).map(normalizeWorldBookRecord);
                 state.moments = moments || [];
                 state.posts = posts || [];
                 state.systemTransactions = systemTransactions || [];
@@ -16267,35 +16420,158 @@
             return chunks;
         };
 
-        // SillyTavern 世界书条目 -> 扁平列表（禁用的条目跳过）
-        const normalizeLoreEntries = book => {
-            if (!book) return [];
-            let rawEntries = book.entries;
-            if (!rawEntries || typeof rawEntries !== 'object') return [];
-            if (!Array.isArray(rawEntries)) rawEntries = Object.values(rawEntries);
-            return rawEntries.map(entry => {
-                if (!entry || typeof entry !== 'object') return null;
-                if (entry.disable || entry.enabled === false) return null;
-                const keys = [];
-                const collectKeys = value => {
-                    if (!value) return;
-                    const list = Array.isArray(value) ? value : String(value).split(',');
-                    list.forEach(item => {
-                        const key = String(item || '').trim();
-                        if (key && !keys.includes(key)) keys.push(key);
-                    });
-                };
-                collectKeys(entry.keys);
-                collectKeys(entry.key);
-                const content = String(entry.content || '').trim();
-                if (!content) return null;
-                return {
-                    name: String(entry.comment || entry.name || '').trim(),
-                    keys,
-                    content
-                };
+        // ==================== 世界书条目（对齐 SillyTavern 规制） ====================
+        // 一本世界书 = 一堆独立条目：备注(comment)、主/次关键词(keys / secondary_keys)、
+        // 正文(content)、顺序(insertion_order)、常驻(constant)、启用(enabled / disable)……
+        // 下面这段是纯函数（不碰 DOM / 数据库），tools/test-worldbook-import.mjs 会直接测它。
+        // ==WORLDBOOK_PURE_START==
+        const createLoreEntryId = () => `le_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+        const parseLoreKeyList = value => {
+            const keys = [];
+            const push = item => {
+                const key = String(item === undefined || item === null ? '' : item).trim();
+                if (key && !keys.includes(key)) keys.push(key);
+            };
+            if (Array.isArray(value)) value.forEach(push);
+            else if (typeof value === 'string') value.split(/[,，]/).forEach(push);
+            return keys;
+        };
+
+        // 位置字段：V2 角色卡用字符串，独立世界书文件用数字（0-4）
+        const LORE_POSITION_TEXT = {
+            '0': 'before_char', '1': 'after_char', '2': 'before_char', '3': 'after_char', '4': 'at_depth',
+            before_char: 'before_char', after_char: 'after_char', at_depth: 'at_depth',
+            before_character: 'before_char', after_character: 'after_char',
+            before_an: 'before_char', after_an: 'after_char'
+        };
+
+        const normalizeLoreEntry = (entry, index = 0) => {
+            if (!entry || typeof entry !== 'object') return null;
+            const content = String(entry.content !== undefined && entry.content !== null ? entry.content : (entry.text || '')).trim();
+            if (!content) return null;
+            const keys = [...parseLoreKeyList(entry.keys), ...parseLoreKeyList(entry.key)]
+                .filter((key, i, list) => list.indexOf(key) === i);
+            const secondaryKeys = [...parseLoreKeyList(entry.secondary_keys), ...parseLoreKeyList(entry.keysecondary)]
+                .filter((key, i, list) => list.indexOf(key) === i);
+            const enabled = entry.disable === true ? false : entry.enabled !== false;
+            const rawOrder = [entry.insertion_order, entry.order, entry.displayIndex]
+                .find(value => value !== undefined && value !== null && value !== '');
+            const order = Number.isFinite(Number(rawOrder)) ? Number(rawOrder) : 100 + index;
+            const probability = Number(entry.probability);
+            const depth = Number(entry.depth);
+            const rawPosition = entry.position !== undefined ? entry.position
+                : (entry.extensions && entry.extensions.position);
+            const id = (entry.id !== undefined && entry.id !== null && entry.id !== '')
+                ? String(entry.id)
+                : (entry.uid !== undefined && entry.uid !== null ? `le_st_${entry.uid}` : createLoreEntryId());
+            return {
+                id,
+                comment: String(entry.comment !== undefined && entry.comment !== null ? entry.comment : (entry.name || '')).trim(),
+                keys,
+                secondaryKeys,
+                content,
+                enabled,
+                constant: entry.constant === true,
+                order,
+                position: LORE_POSITION_TEXT[String(rawPosition)] || 'before_char',
+                depth: Number.isFinite(depth) ? depth : 4,
+                probability: Number.isFinite(probability) ? Math.min(100, Math.max(0, probability)) : 100,
+                caseSensitive: entry.case_sensitive === true || entry.caseSensitive === true,
+                matchWholeWords: entry.match_whole_words === true || entry.matchWholeWords === true,
+                selective: entry.selective === true || secondaryKeys.length > 0,
+                selectiveLogic: Number(entry.selectiveLogic !== undefined ? entry.selectiveLogic : entry.selective_logic) || 0
+            };
+        };
+
+        // 条目容器可能是数组，也可能是 { "0": {...}, "1": {...} } 这种对象
+        const parseLoreEntries = book => {
+            if (!book || typeof book !== 'object') return [];
+            const rawEntries = Array.isArray(book.entries) ? book.entries
+                : (book.entries && typeof book.entries === 'object' ? Object.values(book.entries) : []);
+            const usedIds = new Set();
+            return rawEntries.map((entry, index) => {
+                const normalized = normalizeLoreEntry(entry, index);
+                if (!normalized) return null;
+                let id = normalized.id;
+                let suffix = 1;
+                while (usedIds.has(id)) id = `${normalized.id}#${suffix++}`;
+                usedIds.add(id);
+                normalized.id = id;
+                return normalized;
             }).filter(Boolean);
         };
+
+        const renderLoreEntryTitle = (entry, index) => {
+            const name = String(entry.comment || '').trim() || `条目 ${index + 1}`;
+            const keys = Array.isArray(entry.keys) ? entry.keys.filter(Boolean) : [];
+            return keys.length ? `【${name}｜触发词：${keys.join('、')}】` : `【${name}】`;
+        };
+
+        // 把条目按 SillyTavern 的顺序拼成整本文本（禁用的条目不注入）
+        const renderLoreEntriesContent = entries => (Array.isArray(entries) ? entries : [])
+            .filter(entry => entry && entry.enabled !== false && String(entry.content || '').trim())
+            .slice()
+            .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+            .map((entry, index) => `${renderLoreEntryTitle(entry, index)}\n${entry.content}`)
+            .join('\n\n');
+
+        // 旧版本只存了一整块 content，迁移成单条目，编辑器和注入都能继续用
+        const normalizeWorldBookRecord = book => {
+            if (!book || typeof book !== 'object') return book;
+            let entries = parseLoreEntries(book);
+            if (!entries.length) {
+                const legacy = String(book.content || '').trim();
+                if (!legacy) return { ...book, entries: [] };
+                entries = [{
+                    id: createLoreEntryId(),
+                    comment: '正文',
+                    keys: [],
+                    secondaryKeys: [],
+                    content: legacy,
+                    enabled: true,
+                    constant: true,
+                    order: 100,
+                    position: 'before_char',
+                    depth: 4,
+                    probability: 100,
+                    caseSensitive: false,
+                    matchWholeWords: false,
+                    selective: false,
+                    selectiveLogic: 0
+                }];
+            }
+            return { ...book, entries, content: renderLoreEntriesContent(entries) };
+        };
+
+        // 编辑器 / 导入落库前，把字段整理成统一结构
+        const normalizeStoredLoreEntry = entry => {
+            const source = entry || {};
+            const content = String(source.content || '').trim();
+            const keys = parseLoreKeyList(source.keys);
+            const secondaryKeys = parseLoreKeyList(source.secondaryKeys);
+            const order = Number(source.order);
+            const depth = Number(source.depth);
+            const probability = Number(source.probability);
+            return {
+                id: source.id || createLoreEntryId(),
+                comment: String(source.comment || '').trim(),
+                keys,
+                secondaryKeys,
+                content,
+                enabled: source.enabled !== false,
+                constant: source.constant === true,
+                order: Number.isFinite(order) ? order : 100,
+                position: LORE_POSITION_TEXT[String(source.position)] || 'before_char',
+                depth: Number.isFinite(depth) ? depth : 4,
+                probability: Number.isFinite(probability) ? Math.min(100, Math.max(0, probability)) : 100,
+                caseSensitive: source.caseSensitive === true,
+                matchWholeWords: source.matchWholeWords === true,
+                selective: source.selective === true || secondaryKeys.length > 0,
+                selectiveLogic: Number(source.selectiveLogic) || 0
+            };
+        };
+        // ==WORLDBOOK_PURE_END==
 
         // 兼容 SillyTavern v1（扁平）/ v2 / v3（data 包裹）三种格式
         const normalizeSillyTavernCard = payload => {
@@ -16366,11 +16642,7 @@
         };
 
         // 37Chat 是整本注入世界书的（没有关键词触发机制），所以把触发词写进条目标题里
-        const buildCardWorldBookContent = book => normalizeLoreEntries(book).map((entry, index) => {
-            const titleParts = [entry.name || `条目 ${index + 1}`];
-            if (entry.keys.length) titleParts.push(`触发词：${entry.keys.join('、')}`);
-            return `【${titleParts.join('｜')}】\n${entry.content}`;
-        }).join('\n\n');
+        const buildCardWorldBookContent = book => renderLoreEntriesContent(parseLoreEntries(book));
 
         const guessCardGender = card => {
             const haystack = [card.personality, card.description, card.scenario, card.tags.join(' '), card.name]
@@ -16401,12 +16673,15 @@
             return candidate;
         };
 
-        const saveImportedWorldBook = async (name, content, folder = CARD_IMPORT_FOLDER) => {
+        // 导入时把 SillyTavern 的 character_book.entries 逐条落库，而不是拼成一整块
+        const saveImportedWorldBook = async (name, entries, folder = CARD_IMPORT_FOLDER) => {
+            const normalizedEntries = (Array.isArray(entries) ? entries : []).map(normalizeStoredLoreEntry);
             const book = {
                 id: createUniqueRecordId('wb', state.worldBooks),
                 name,
                 folder,
-                content
+                entries: normalizedEntries,
+                content: renderLoreEntriesContent(normalizedEntries)
             };
             state.worldBooks.push(book);
             await db.worldBooks.put(book);
@@ -16417,10 +16692,10 @@
         const importSillyTavernCharacter = async (card, options = {}) => {
             const characterName = card.name;
             let worldBook = null;
-            const worldBookContent = buildCardWorldBookContent(card.character_book);
-            if (worldBookContent) {
+            const cardEntries = parseLoreEntries(card.character_book);
+            if (cardEntries.length) {
                 const bookName = String(card.character_book.name || `${characterName} 的世界书`).trim() || `${characterName} 的世界书`;
-                worldBook = await saveImportedWorldBook(bookName, worldBookContent);
+                worldBook = await saveImportedWorldBook(bookName, cardEntries);
             }
             const avatar = options.avatar || BLANK_AVATAR;
             const greeting = renderCardGreeting(card.first_mes, characterName);
@@ -16493,11 +16768,11 @@
 
         const importSillyTavernWorldBook = async (payload, sourceName = '') => {
             const source = (payload.originalData && typeof payload.originalData === 'object') ? payload.originalData : payload;
-            const content = buildCardWorldBookContent(source);
-            if (!content) throw new Error('世界书里没有可导入的条目');
+            const entries = parseLoreEntries(source);
+            if (!entries.length) throw new Error('世界书里没有可导入的条目');
             const fallbackName = String(sourceName).replace(/\.(json|png)$/i, '').trim();
             const name = String(source.name || payload.name || fallbackName || '导入的世界书').trim() || '导入的世界书';
-            return saveImportedWorldBook(name, content);
+            return saveImportedWorldBook(name, entries);
         };
 
         const importCharacterCardFile = async file => {
@@ -16545,12 +16820,16 @@
             }
             const characters = results.filter(item => item.type === 'character');
             const books = results.filter(item => item.type === 'worldbook');
+            const entryCountText = book => {
+                const count = Array.isArray(book?.entries) ? book.entries.length : 0;
+                return count ? `，已拆成 ${count} 条条目` : '';
+            };
             const lines = [];
             if (characters.length) {
-                lines.push(`已导入 ${characters.length} 个角色：\n` + characters.map(item => `· ${item.character.name}${item.worldBook ? `（附带世界书「${item.worldBook.name}」）` : ''}`).join('\n'));
+                lines.push(`已导入 ${characters.length} 个角色：\n` + characters.map(item => `· ${item.character.name}${item.worldBook ? `（附带世界书「${item.worldBook.name}」${entryCountText(item.worldBook)}）` : ''}`).join('\n'));
             }
             if (books.length) {
-                lines.push(`已导入 ${books.length} 本世界书：\n` + books.map(item => `· ${item.book.name}`).join('\n'));
+                lines.push(`已导入 ${books.length} 本世界书：\n` + books.map(item => `· ${item.book.name}${entryCountText(item.book)}`).join('\n'));
             }
             if (errors.length) {
                 lines.push(`以下文件导入失败：\n` + errors.join('\n'));
@@ -16572,6 +16851,12 @@
 
 
         cancelBtn.addEventListener('click', closeIdentityModal);
+        const escapeLoreText = text => String(text === undefined || text === null ? '' : text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+
         const renderWorldBooksList = () => {
             const listContainer = document.getElementById('worldbooks-list');
             listContainer.innerHTML = ''; // 清空主容器
@@ -16607,12 +16892,18 @@
                 groupedBooks[folderName].forEach(book => {
                     const li = document.createElement('li');
                     li.className = 'list-item';
+                    const entries = Array.isArray(book.entries) ? book.entries : parseLoreEntries(book);
+                    const enabledEntries = entries.filter(entry => entry.enabled !== false);
+                    const countText = entries.length ? `${enabledEntries.length}/${entries.length} 条条目` : '无条目';
+                    const previewText = (enabledEntries.length
+                        ? enabledEntries.map(entry => String(entry.content || '').replace(/\s+/g, ' ')).join(' ')
+                        : String(book.content || '').replace(/\s+/g, ' ')).slice(0, 70);
 
                     li.innerHTML = `
                         <img src="https://placehold.co/100x100/c9b7d0/ffffff?text=WB" alt="worldbook icon">
                         <div class="list-item-info">
-                            <strong>${book.name}</strong>
-                            <p>${book.content.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, ' ')}</p>
+                            <strong>${escapeLoreText(book.name)}</strong>
+                            <p><span style="color:#8a7f93;">${countText}</span> · ${escapeLoreText(previewText)}</p>
                         </div>
                     `;
 
@@ -16623,30 +16914,165 @@
             });
         };
 
+        // ===== 世界书条目编辑器（一本世界书 = 多条独立条目，对齐 SillyTavern） =====
+        let editingWorldBookEntries = [];
+
+        const worldbookEntriesContainer = document.getElementById('worldbook-entries');
+
+        const updateWorldBookEntryCount = () => {
+            document.getElementById('worldbook-entry-count').textContent = String(editingWorldBookEntries.length);
+        };
+
+        const createLoreEntryEditor = (entry, index, open) => {
+            const wrap = document.createElement('div');
+            wrap.className = `wb-entry${entry.enabled === false ? ' is-disabled' : ''}${open ? ' is-open' : ''}`;
+            wrap.dataset.index = String(index);
+            wrap.innerHTML = `
+                <div class="wb-entry-head">
+                    <button type="button" class="wb-entry-toggle" data-action="toggle" title="展开/收起"><i class="fas fa-chevron-right"></i></button>
+                    <input type="checkbox" class="wb-entry-enabled" title="启用这条条目">
+                    <input type="text" class="wb-entry-comment" placeholder="条目标题（例如：魔法体系）">
+                    <span class="wb-entry-badge"></span>
+                    <button type="button" class="wb-entry-delete" data-action="delete" title="删除这条条目"><i class="fas fa-trash-alt"></i></button>
+                </div>
+                <div class="wb-entry-body">
+                    <label>触发关键词 <span class="wb-hint">（逗号分隔，留空则只随整本注入）</span></label>
+                    <input type="text" class="wb-entry-keys" placeholder="例如：魔法, 魔力, mana">
+                    <label>次关键词 <span class="wb-hint">（可选，需与主关键词一起命中）</span></label>
+                    <input type="text" class="wb-entry-secondary-keys" placeholder="留空即可">
+                    <label>条目内容</label>
+                    <textarea class="wb-entry-content" rows="5" placeholder="可使用 {{char}} 和 {{user}} 占位符"></textarea>
+                    <div class="wb-entry-row">
+                        <label><input type="checkbox" class="wb-entry-constant"> 常驻（无需关键词）</label>
+                        <label>顺序 <input type="number" class="wb-entry-order" step="1"></label>
+                    </div>
+                </div>
+            `;
+            wrap.querySelector('.wb-entry-enabled').checked = entry.enabled !== false;
+            wrap.querySelector('.wb-entry-comment').value = entry.comment || '';
+            wrap.querySelector('.wb-entry-keys').value = (entry.keys || []).join(', ');
+            wrap.querySelector('.wb-entry-secondary-keys').value = (entry.secondaryKeys || []).join(', ');
+            wrap.querySelector('.wb-entry-content').value = entry.content || '';
+            wrap.querySelector('.wb-entry-constant').checked = entry.constant === true;
+            wrap.querySelector('.wb-entry-order').value = String(Number.isFinite(Number(entry.order)) ? Number(entry.order) : 100);
+            wrap.querySelector('.wb-entry-badge').textContent = (entry.keys || []).length
+                ? `${entry.keys.length} 个关键词` : '无关键词';
+            return wrap;
+        };
+
+        const renderWorldBookEntriesEditor = () => {
+            worldbookEntriesContainer.innerHTML = '';
+            if (!editingWorldBookEntries.length) {
+                worldbookEntriesContainer.innerHTML = '<p class="wb-entry-empty">还没有条目，点右上角「添加条目」。</p>';
+                updateWorldBookEntryCount();
+                return;
+            }
+            editingWorldBookEntries.forEach((entry, index) => {
+                worldbookEntriesContainer.appendChild(createLoreEntryEditor(entry, index, index === 0));
+            });
+            updateWorldBookEntryCount();
+        };
+
+        const createBlankLoreEntry = () => {
+            const maxOrder = editingWorldBookEntries.reduce((max, item) => Math.max(max, Number(item.order) || 0), 0);
+            return normalizeStoredLoreEntry({ enabled: true, order: maxOrder + 10 });
+        };
+
         const openWorldBookModal = (book = null) => {
             const form = document.getElementById('worldbook-form'); form.reset();
             const isEditing = !!book;
             document.getElementById('worldbook-modal-title').textContent = isEditing ? '编辑世界设定' : '创建世界设定';
             document.getElementById('worldbook-id').value = book?.id || '';
             document.getElementById('worldbook-name').value = book?.name || '';
-
             document.getElementById('worldbook-folder').value = book?.folder || '';
-
-            document.getElementById('worldbook-content').value = book?.content || '';
             document.getElementById('delete-worldbook-btn').style.display = isEditing ? 'block' : 'none';
+
+            const sourceEntries = book
+                ? (Array.isArray(book.entries) && book.entries.length ? book.entries : (normalizeWorldBookRecord(book).entries || []))
+                : [];
+            editingWorldBookEntries = sourceEntries.map(entry => normalizeStoredLoreEntry(entry));
+            if (!editingWorldBookEntries.length) {
+                editingWorldBookEntries = [normalizeStoredLoreEntry({ enabled: true, order: 100 })];
+            }
+            renderWorldBookEntriesEditor();
             worldbookModal.style.display = 'flex';
         };
+
+        document.getElementById('add-worldbook-entry-btn').addEventListener('click', () => {
+            editingWorldBookEntries.push(createBlankLoreEntry());
+            renderWorldBookEntriesEditor();
+            const last = worldbookEntriesContainer.lastElementChild;
+            if (last) {
+                last.classList.add('is-open');
+                last.scrollIntoView({ block: 'nearest' });
+            }
+        });
+
+        // 编辑器里的输入直接写回内存数组，保存时统一整理
+        const syncLoreEntryFromInput = event => {
+            const wrap = event.target.closest('.wb-entry');
+            if (!wrap) return;
+            const entry = editingWorldBookEntries[Number(wrap.dataset.index)];
+            if (!entry) return;
+            const target = event.target;
+            if (target.classList.contains('wb-entry-enabled')) {
+                entry.enabled = target.checked;
+                wrap.classList.toggle('is-disabled', !target.checked);
+            } else if (target.classList.contains('wb-entry-comment')) {
+                entry.comment = target.value;
+            } else if (target.classList.contains('wb-entry-keys')) {
+                entry.keys = parseLoreKeyList(target.value);
+                wrap.querySelector('.wb-entry-badge').textContent = entry.keys.length
+                    ? `${entry.keys.length} 个关键词` : '无关键词';
+            } else if (target.classList.contains('wb-entry-secondary-keys')) {
+                entry.secondaryKeys = parseLoreKeyList(target.value);
+            } else if (target.classList.contains('wb-entry-content')) {
+                entry.content = target.value;
+            } else if (target.classList.contains('wb-entry-constant')) {
+                entry.constant = target.checked;
+            } else if (target.classList.contains('wb-entry-order')) {
+                entry.order = Number(target.value) || 0;
+            }
+        };
+        worldbookEntriesContainer.addEventListener('input', syncLoreEntryFromInput);
+        worldbookEntriesContainer.addEventListener('change', syncLoreEntryFromInput);
+
+        worldbookEntriesContainer.addEventListener('click', event => {
+            const action = event.target.closest('[data-action]');
+            const wrap = event.target.closest('.wb-entry');
+            if (!action || !wrap) return;
+            if (action.dataset.action === 'toggle') {
+                wrap.classList.toggle('is-open');
+            } else if (action.dataset.action === 'delete') {
+                editingWorldBookEntries.splice(Number(wrap.dataset.index), 1);
+                renderWorldBookEntriesEditor();
+            }
+        });
         const closeWorldBookModal = () => worldbookModal.style.display = 'none';
         document.getElementById('add-worldbook-btn').addEventListener('click', () => openWorldBookModal());
         document.getElementById('cancel-worldbook-btn').addEventListener('click', closeWorldBookModal);
         document.getElementById('worldbook-form').addEventListener('submit', async e => {
             e.preventDefault();
             const id = document.getElementById('worldbook-id').value;
+            const name = document.getElementById('worldbook-name').value.trim();
+            const folder = document.getElementById('worldbook-folder').value.trim();
+            if (!name) {
+                alert('请填写设定集名称');
+                return;
+            }
+            const entries = editingWorldBookEntries
+                .map(normalizeStoredLoreEntry)
+                .filter(entry => entry.content);
+            if (!entries.length) {
+                alert('请至少填写一条条目的内容');
+                return;
+            }
 
             const bookData = {
-                name: document.getElementById('worldbook-name').value.trim(),
-                folder: document.getElementById('worldbook-folder').value.trim(),
-                content: document.getElementById('worldbook-content').value.trim()
+                name,
+                folder,
+                entries,
+                content: renderLoreEntriesContent(entries)
             };
 
             let finalData;
@@ -16657,7 +17083,7 @@
                     state.worldBooks[index] = finalData;
                 }
             } else {
-                finalData = { id: `wb_${Date.now()}`, ...bookData };
+                finalData = { id: createUniqueRecordId('wb', state.worldBooks), ...bookData };
                 state.worldBooks.push(finalData);
             }
 
@@ -16852,7 +17278,9 @@
                     const isChecked = character.worldBookIds?.includes(book.id);
                     const itemDiv = document.createElement('div');
                     itemDiv.className = 'bind-book-item';
-                    itemDiv.innerHTML = `<input type="checkbox" id="wb-${book.id}" value="${book.id}" ${isChecked ? 'checked' : ''}><label for="wb-${book.id}">${book.name}</label>`;
+                    const bookEntryCount = Array.isArray(book.entries) ? book.entries.length : parseLoreEntries(book).length;
+                    const countLabel = bookEntryCount ? ` <span style="color:#8a7f93; font-size:.78rem;">(${bookEntryCount} 条)</span>` : '';
+                    itemDiv.innerHTML = `<input type="checkbox" id="wb-${book.id}" value="${book.id}" ${isChecked ? 'checked' : ''}><label for="wb-${book.id}">${escapeLoreText(book.name)}${countLabel}</label>`;
                     form.appendChild(itemDiv);
                     return itemDiv.querySelector('input');
                 });
