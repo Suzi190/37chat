@@ -16439,11 +16439,28 @@
         };
 
         // 位置字段：V2 角色卡用字符串，独立世界书文件用数字（0-4）
+        // SillyTavern 的 position：V2 卡里是字符串 before_char/after_char，
+        // 原生世界书（world info JSON）里是数字 0-7，含义见 world_info_position。
         const LORE_POSITION_TEXT = {
-            '0': 'before_char', '1': 'after_char', '2': 'before_char', '3': 'after_char', '4': 'at_depth',
+            '0': 'before_char', '1': 'after_char', '2': 'before_an', '3': 'after_an',
+            '4': 'at_depth', '5': 'em_top', '6': 'em_bottom', '7': 'outlet',
             before_char: 'before_char', after_char: 'after_char', at_depth: 'at_depth',
+            before_an: 'before_an', after_an: 'after_an',
+            em_top: 'em_top', em_bottom: 'em_bottom', outlet: 'outlet',
             before_character: 'before_char', after_character: 'after_char',
-            before_an: 'before_char', after_an: 'after_char'
+            before_an_note: 'before_an', after_an_note: 'after_an'
+        };
+
+        // 编辑器里给用户看的插入位置说明
+        const LORE_POSITION_LABEL = {
+            before_char: '角色定义前',
+            after_char: '角色定义后',
+            before_an: '作者注释前',
+            after_an: '作者注释后',
+            at_depth: '按深度插入',
+            em_top: '示例消息前',
+            em_bottom: '示例消息后',
+            outlet: '出口'
         };
 
         const normalizeLoreEntry = (entry, index = 0) => {
@@ -16508,12 +16525,18 @@
             return keys.length ? `【${name}｜触发词：${keys.join('、')}】` : `【${name}】`;
         };
 
-        // 把条目按 SillyTavern 的顺序拼成整本文本（禁用的条目不注入）
+        // 把条目拼成整本文本（禁用的条目不注入）。
+        // 顺序与 SillyTavern 落进 prompt 的最终顺序一致：ST 用 sortFn(order 降序) 遍历、
+        // 再 unshift 插入 WIBeforeEntries，所以文本里 order 小的在前。
+        // order 相同时保持条目原顺序（显式用下标兜底，不赌 sort 的稳定性）。
         const renderLoreEntriesContent = entries => (Array.isArray(entries) ? entries : [])
-            .filter(entry => entry && entry.enabled !== false && String(entry.content || '').trim())
-            .slice()
-            .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
-            .map((entry, index) => `${renderLoreEntryTitle(entry, index)}\n${entry.content}`)
+            .map((entry, index) => ({ entry, index }))
+            .filter(({ entry }) => entry && entry.enabled !== false && String(entry.content || '').trim())
+            .sort((a, b) => {
+                const diff = (Number(a.entry.order) || 0) - (Number(b.entry.order) || 0);
+                return diff || (a.index - b.index);
+            })
+            .map(({ entry }, index) => `${renderLoreEntryTitle(entry, index)}\n${entry.content}`)
             .join('\n\n');
 
         // 旧版本只存了一整块 content，迁移成单条目，编辑器和注入都能继续用
@@ -16944,8 +16967,9 @@
                     <textarea class="wb-entry-content" rows="5" placeholder="可使用 {{char}} 和 {{user}} 占位符"></textarea>
                     <div class="wb-entry-row">
                         <label><input type="checkbox" class="wb-entry-constant"> 常驻（无需关键词）</label>
-                        <label>顺序 <input type="number" class="wb-entry-order" step="1"></label>
+                        <label>顺序 <input type="number" class="wb-entry-order" step="1" title="SillyTavern 的 insertion_order：数字越小，拼进提示词时越靠前；数字相同时按条目顺序排列"><span class="wb-hint">越小越靠前</span></label>
                     </div>
+                    <p class="wb-hint wb-entry-meta"></p>
                 </div>
             `;
             wrap.querySelector('.wb-entry-enabled').checked = entry.enabled !== false;
@@ -16957,6 +16981,17 @@
             wrap.querySelector('.wb-entry-order').value = String(Number.isFinite(Number(entry.order)) ? Number(entry.order) : 100);
             wrap.querySelector('.wb-entry-badge').textContent = (entry.keys || []).length
                 ? `${entry.keys.length} 个关键词` : '无关键词';
+            // 把 ST 里 order/position/depth 这些“注入语义”直接摆给用户看，避免只能靠猜
+            const metaNode = wrap.querySelector('.wb-entry-meta');
+            const syncEntryMeta = () => {
+                const positionLabel = LORE_POSITION_LABEL[entry.position] || LORE_POSITION_LABEL.before_char;
+                const depthValue = Number.isFinite(Number(entry.depth)) ? Number(entry.depth) : 4;
+                const probabilityValue = Number.isFinite(Number(entry.probability)) ? Number(entry.probability) : 100;
+                const orderValue = wrap.querySelector('.wb-entry-order').value || '100';
+                metaNode.textContent = `插入位置：${positionLabel} · 深度 ${depthValue} · 概率 ${probabilityValue}% · 顺序 ${orderValue}（越小越靠前）`;
+            };
+            syncEntryMeta();
+            wrap.querySelector('.wb-entry-order').addEventListener('input', syncEntryMeta);
             return wrap;
         };
 

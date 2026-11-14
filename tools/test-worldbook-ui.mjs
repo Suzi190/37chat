@@ -153,6 +153,8 @@ function probeEditorScript() {
             comments: editors.map(item => item.querySelector('.wb-entry-comment').value),
             firstKeys: first ? first.querySelector('.wb-entry-keys').value : '',
             firstContent: first ? first.querySelector('.wb-entry-content').value : '',
+            metaTexts: editors.map(item => normalize(item.querySelector('.wb-entry-meta'))),
+            orderValues: editors.map(item => item.querySelector('.wb-entry-order').value),
             modalDisplay: getComputedStyle(document.getElementById('worldbook-modal')).display
         });
     })()`;
@@ -321,6 +323,9 @@ async function main() {
     assert.equal(ui.countLabel, '3');
     assert.ok(ui.comments.includes('魔法体系') && ui.comments.includes('骑士团') && ui.comments.includes('世界观'), '条目标题要显示出来，实际: ' + JSON.stringify(ui.comments));
     assert.equal(ui.modalDisplay, 'flex', '点开世界书应弹出编辑器');
+    assert.deepEqual(ui.orderValues, ['30', '20', '10'], '编辑器要带出 ST 的 insertion_order，实际: ' + JSON.stringify(ui.orderValues));
+    assert.ok(ui.metaTexts.every(text => text.includes('越小越靠前')), '每条条目都要说明顺序方向，实际: ' + JSON.stringify(ui.metaTexts));
+    assert.ok(ui.metaTexts.some(text => text.includes('角色定义后')), 'position 要翻成中文说明，实际: ' + JSON.stringify(ui.metaTexts));
     assert.equal(exceptions.length, 0, '页面不应有未捕获异常: ' + exceptions[0]);
 
     console.log('导入提示: ' + (alerts[0] || '(无)').replace(/\n/g, ' | '));

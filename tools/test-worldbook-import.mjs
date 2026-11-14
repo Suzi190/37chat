@@ -78,17 +78,32 @@ const standaloneBook = {
     entries: {
         0: { uid: 0, key: ['王都', '首都'], keysecondary: ['城门'], comment: '王都', content: '王都建在山上。', disable: false, order: 3, position: 1 },
         1: { uid: 1, key: '龙', content: '龙族已经灭绝。', disable: true, order: 4, position: 0 },
-        2: { uid: 2, key: '空内容', content: '   ', disable: false, order: 5 }
+        2: { uid: 2, key: '空内容', content: '   ', disable: false, order: 5 },
+        3: { uid: 3, key: '作者注释', content: '作者注释前的提示。', disable: false, order: 6, position: 2 },
+        4: { uid: 4, key: '深度', content: '按深度插入的提示。', disable: false, order: 7, position: 4 },
+        5: { uid: 5, key: '示例', content: '示例消息前的提示。', disable: false, order: 8, position: 5 },
+        6: { uid: 6, key: '出口', content: '出口插槽的内容。', disable: false, order: 9, position: 7 }
     }
 };
 const standaloneEntries = api.parseLoreEntries(standaloneBook);
-assert.equal(standaloneEntries.length, 2, '空内容的条目应被丢弃');
+assert.equal(standaloneEntries.length, 6, '空内容的条目应被丢弃');
 assert.deepEqual(standaloneEntries[0].keys, ['王都', '首都']);
 assert.deepEqual(standaloneEntries[0].secondaryKeys, ['城门']);
 assert.equal(standaloneEntries[0].position, 'after_char');
 assert.deepEqual(standaloneEntries[1].keys, ['龙'], '字符串 key 也要拆成数组');
 assert.equal(standaloneEntries[1].enabled, false);
 assert.equal(standaloneEntries[1].position, 'before_char');
+// ST 的 world_info_position：2/3 是作者注释上/下，5/6 是示例消息上/下，7 是出口，不能都糊成 before_char/after_char
+assert.equal(standaloneEntries[2].position, 'before_an', 'position 2 是作者注释前');
+assert.equal(standaloneEntries[3].position, 'at_depth', 'position 4 是按深度插入');
+assert.equal(standaloneEntries[4].position, 'em_top', 'position 5 是示例消息前');
+assert.equal(standaloneEntries[5].position, 'outlet', 'position 7 是出口');
+
+// 3.1) V2 卡里 position 也可能是 extensions.position（数字），同样要认得
+const extensionPositionEntry = api.parseLoreEntries({
+    entries: [{ id: 1, keys: ['x'], content: '扩展位置。', extensions: { position: 3 } }]
+})[0];
+assert.equal(extensionPositionEntry.position, 'after_an', 'extensions.position=3 是作者注释后');
 
 // 4) 旧版本地世界书只有一整块 content：迁移成单条目，原文本不能丢
 const legacyBook = api.normalizeWorldBookRecord({ id: 'wb_1', name: '旧书', content: '第一段\n第二段' });
@@ -126,5 +141,16 @@ const orderProbe = [
 api.renderLoreEntriesContent(orderProbe);
 assert.deepEqual(orderProbe.map(item => item.id), ['b', 'a'], '渲染时不能打乱原数组');
 assert.deepEqual(api.parseLoreKeyList(' 魔法, 魔力，mana '), ['魔法', '魔力', 'mana']);
+
+// 7) 同 order 的条目必须保持原顺序，且 order 小的整体在前（对齐 ST 降序遍历 + unshift 的最终文本顺序）
+const tieProbe = [
+    { id: 'x', content: 'TIEX', order: 100, enabled: true, keys: [] },
+    { id: 'y', content: 'TIEY', order: 100, enabled: true, keys: [] },
+    { id: 'z', content: 'TIEZ', order: 50, enabled: true, keys: [] }
+];
+const tieRendered = api.renderLoreEntriesContent(tieProbe);
+assert.ok(tieRendered.indexOf('TIEZ') < tieRendered.indexOf('TIEX'), 'order 小的应该排在前面');
+assert.ok(tieRendered.indexOf('TIEX') < tieRendered.indexOf('TIEY'), 'order 相同时要保持条目原顺序');
+assert.deepEqual(tieProbe.map(item => item.id), ['x', 'y', 'z'], '排序不能就地改动条目数组');
 
 console.log('[ok] 世界书导入分条测试全部通过');
