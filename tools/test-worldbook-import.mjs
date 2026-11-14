@@ -31,7 +31,8 @@ return {
     renderLoreEntryTitle,
     renderLoreEntriesContent,
     normalizeWorldBookRecord,
-    normalizeStoredLoreEntry
+    normalizeStoredLoreEntry,
+    activateLoreEntries
 };`)();
 
 // 1) V2 角色卡（character_book.entries 是数组，字段是 snake_case）
@@ -152,5 +153,106 @@ const tieRendered = api.renderLoreEntriesContent(tieProbe);
 assert.ok(tieRendered.indexOf('TIEZ') < tieRendered.indexOf('TIEX'), 'order 小的应该排在前面');
 assert.ok(tieRendered.indexOf('TIEX') < tieRendered.indexOf('TIEY'), 'order 相同时要保持条目原顺序');
 assert.deepEqual(tieProbe.map(item => item.id), ['x', 'y', 'z'], '排序不能就地改动条目数组');
+
+// 8) SillyTavern 式激活：常驻直接生效，关键词命中才注入，禁用/未命中都不进 prompt
+const activationEntries = api.parseLoreEntries({
+    entries: [
+        { uid: 1, comment: '常驻', keys: [], content: 'COMMON', constant: true, order: 10 },
+        { uid: 2, comment: '魔法', keys: ['魔法'], content: 'MAGIC', order: 20 },
+        { uid: 3, comment: '骑士', keys: ['骑士'], content: 'KNIGHT', order: 30 },
+        { uid: 4, comment: '学院', keys: ['魔法'], keysecondary: ['学院'], content: 'ACADEMY', order: 40, selective: true },
+        { uid: 5, comment: '禁用', keys: ['魔法'], content: 'DISABLED', order: 50, disable: true }
+    ]
+});
+assert.deepEqual(
+    api.activateLoreEntries(activationEntries, '她走进了魔法学院').map(entry => entry.content),
+    ['COMMON', 'MAGIC', 'ACADEMY'],
+    '常驻 + 命中关键词的条目才注入，禁用条目永远不注入'
+);
+assert.deepEqual(
+    api.activateLoreEntries(activationEntries, '今天天气不错').map(entry => entry.content),
+    ['COMMON'],
+    '没有关键词命中时只注入常驻条目'
+);
+assert.deepEqual(
+    api.activateLoreEntries(activationEntries, '魔法').map(entry => entry.content),
+    ['COMMON', 'MAGIC'],
+    '次关键词没命中时，selective 条目不生效'
+);
+
+// 8.1) 次关键词的四种组合逻辑（ST selectiveLogic 0/1/2/3）
+const logicEntries = api.parseLoreEntries({
+    entries: [
+        { uid: 1, keys: ['魔法'], keysecondary: ['学院', '塔'], content: 'AND_ANY', selective: true, selective_logic: 0, order: 1 },
+        { uid: 2, keys: ['魔法'], keysecondary: ['学院', '塔'], content: 'NOT_ALL', selective: true, selective_logic: 1, order: 2 },
+        { uid: 3, keys: ['魔法'], keysecondary: ['学院', '塔'], content: 'NOT_ANY', selective: true, selective_logic: 2, order: 3 },
+        { uid: 4, keys: ['魔法'], keysecondary: ['学院', '塔'], content: 'AND_ALL', selective: true, selective_logic: 3, order: 4 }
+    ]
+});
+assert.deepEqual(api.activateLoreEntries(logicEntries, '魔法学院').map(entry => entry.content), ['AND_ANY', 'NOT_ALL']);
+assert.deepEqual(api.activateLoreEntries(logicEntries, '魔法学院塔').map(entry => entry.content), ['AND_ANY', 'AND_ALL']);
+assert.deepEqual(api.activateLoreEntries(logicEntries, '魔法').map(entry => entry.content), ['NOT_ALL', 'NOT_ANY']);
+
+// 8.2) 大小写、整词匹配、正则关键词
+const caseEntries = api.parseLoreEntries({
+    entries: [
+        { uid: 1, keys: ['Mana'], content: 'CASE_SENSITIVE', case_sensitive: true, order: 1 },
+        { uid: 2, keys: ['Mana'], content: 'CASE_INSENSITIVE', order: 2 }
+    ]
+});
+assert.deepEqual(api.activateLoreEntries(caseEntries, 'mana 不够了').map(entry => entry.content), ['CASE_INSENSITIVE']);
+assert.deepEqual(api.activateLoreEntries(caseEntries, 'Mana 见底').map(entry => entry.content), ['CASE_SENSITIVE', 'CASE_INSENSITIVE']);
+
+const wholeWordEntry = api.parseLoreEntries({ entries: [{ uid: 1, keys: ['cat'], content: 'WHOLE', match_whole_words: true }] });
+assert.deepEqual(api.activateLoreEntries(wholeWordEntry, 'category').map(entry => entry.content), []);
+assert.deepEqual(api.activateLoreEntries(wholeWordEntry, 'a cat sleeps').map(entry => entry.content), ['WHOLE']);
+
+const regexEntry = api.parseLoreEntries({ entries: [{ uid: 1, keys: ['/魔[法术]/'], content: 'REGEX' }] });
+assert.deepEqual(api.activateLoreEntries(regexEntry, '魔术').map(entry => entry.content), ['REGEX'], 'ST 的 /regex/ 关键词也要能用');
+
+// 8.3) 概率：100 恒定生效，0 永不生效，50 由随机数决定
+const probabilityEntries = api.parseLoreEntries({
+    entries: [
+        { uid: 1, keys: ['魔法'], content: 'PROB_ALWAYS', probability: 100, order: 1 },
+        { uid: 2, keys: ['魔法'], content: 'PROB_NEVER', probability: 0, order: 2 },
+        { uid: 3, keys: ['魔法'], content: 'PROB_HALF', probability: 50, order: 3 }
+    ]
+});
+assert.deepEqual(api.activateLoreEntries(probabilityEntries, '魔法', { random: () => 0.1 }).map(entry => entry.content), ['PROB_ALWAYS', 'PROB_HALF']);
+assert.deepEqual(api.activateLoreEntries(probabilityEntries, '魔法', { random: () => 0.9 }).map(entry => entry.content), ['PROB_ALWAYS']);
+
+// 8.4) 递归：已注入的条目正文可以再触发别的条目；prevent_recursion 截断这一层
+const recursionEntries = api.parseLoreEntries({
+    entries: [
+        { uid: 1, keys: ['龙'], content: '龙族信仰「星辰」', order: 1 },
+        { uid: 2, keys: ['星辰'], content: '星辰教会', order: 2 },
+        { uid: 3, keys: ['教会'], content: '第三层设定', order: 3 }
+    ]
+});
+assert.deepEqual(
+    api.activateLoreEntries(recursionEntries, '一条龙').map(entry => entry.content),
+    ['龙族信仰「星辰」', '星辰教会', '第三层设定'],
+    '递归最多两轮，正好能串起三层'
+);
+const blockedRecursion = api.parseLoreEntries({
+    entries: [
+        { uid: 1, keys: ['龙'], content: '龙族信仰「星辰」', prevent_recursion: true, order: 1 },
+        { uid: 2, keys: ['星辰'], content: '星辰教会', order: 2 }
+    ]
+});
+assert.deepEqual(api.activateLoreEntries(blockedRecursion, '一条龙').map(entry => entry.content), ['龙族信仰「星辰」']);
+
+// 8.5) 注入顺序：先按插入位置区段，再按 order（小号在前）
+const positionOrderEntries = api.parseLoreEntries({
+    entries: [
+        { uid: 1, keys: ['魔法'], content: 'AFTER_CHAR', position: 1, order: 1 },
+        { uid: 2, keys: ['魔法'], content: 'BEFORE_CHAR', position: 0, order: 99 }
+    ]
+});
+assert.deepEqual(api.activateLoreEntries(positionOrderEntries, '魔法').map(entry => entry.content), ['BEFORE_CHAR', 'AFTER_CHAR']);
+
+// 8.6) 没有关键词又没勾常驻的条目，和 ST 一样永远不会注入
+const emptyKeyEntries = api.parseLoreEntries({ entries: [{ uid: 1, keys: [], content: 'NEVER' }] });
+assert.deepEqual(api.activateLoreEntries(emptyKeyEntries, '随便什么文字').map(entry => entry.content), []);
 
 console.log('[ok] 世界书导入分条测试全部通过');

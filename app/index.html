@@ -2724,6 +2724,21 @@
             border-radius: 6px;
         }
 
+        .wb-entry-row .wb-entry-secondary-keys {
+            flex: 1 1 auto;
+            width: auto;
+        }
+
+        .wb-entry-row .wb-entry-secondary-logic {
+            flex: 0 0 40%;
+            padding: 8px 6px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            background-color: #fff;
+            color: #4a4453;
+        }
+
         .wb-entry-empty {
             text-align: center;
             color: #999;
@@ -16463,6 +16478,12 @@
             outlet: '出口'
         };
 
+        // 同一本书内的先后：先按 ST 的插入区段，再按 order（小号在前）
+        const LORE_POSITION_RANK = {
+            before_char: 0, em_top: 1, before_an: 2, at_depth: 3,
+            after_an: 4, em_bottom: 5, after_char: 6, outlet: 7
+        };
+
         const normalizeLoreEntry = (entry, index = 0) => {
             if (!entry || typeof entry !== 'object') return null;
             const content = String(entry.content !== undefined && entry.content !== null ? entry.content : (entry.text || '')).trim();
@@ -16475,10 +16496,15 @@
             const rawOrder = [entry.insertion_order, entry.order, entry.displayIndex]
                 .find(value => value !== undefined && value !== null && value !== '');
             const order = Number.isFinite(Number(rawOrder)) ? Number(rawOrder) : 100 + index;
-            const probability = Number(entry.probability);
-            const depth = Number(entry.depth);
-            const rawPosition = entry.position !== undefined ? entry.position
-                : (entry.extensions && entry.extensions.position);
+            const ext = (entry.extensions && typeof entry.extensions === 'object') ? entry.extensions : {};
+            const flag = (...values) => values.some(value => value === true);
+            const pickNumber = (...values) => {
+                const hit = values.find(value => value !== undefined && value !== null && value !== '');
+                return Number(hit);
+            };
+            const probability = pickNumber(entry.probability, ext.probability);
+            const depth = pickNumber(entry.depth, ext.depth);
+            const rawPosition = entry.position !== undefined ? entry.position : ext.position;
             const id = (entry.id !== undefined && entry.id !== null && entry.id !== '')
                 ? String(entry.id)
                 : (entry.uid !== undefined && entry.uid !== null ? `le_st_${entry.uid}` : createLoreEntryId());
@@ -16494,10 +16520,16 @@
                 position: LORE_POSITION_TEXT[String(rawPosition)] || 'before_char',
                 depth: Number.isFinite(depth) ? depth : 4,
                 probability: Number.isFinite(probability) ? Math.min(100, Math.max(0, probability)) : 100,
-                caseSensitive: entry.case_sensitive === true || entry.caseSensitive === true,
-                matchWholeWords: entry.match_whole_words === true || entry.matchWholeWords === true,
-                selective: entry.selective === true || secondaryKeys.length > 0,
-                selectiveLogic: Number(entry.selectiveLogic !== undefined ? entry.selectiveLogic : entry.selective_logic) || 0
+                caseSensitive: flag(entry.case_sensitive, entry.caseSensitive, ext.case_sensitive),
+                matchWholeWords: flag(entry.match_whole_words, entry.matchWholeWords, ext.match_whole_words),
+                // ST：只有 selective=true 才会用次关键词；没写这个字段时按“有次关键词就启用”处理
+                selective: entry.selective === undefined
+                    ? (ext.selective === undefined ? secondaryKeys.length > 0 : ext.selective === true)
+                    : entry.selective === true,
+                selectiveLogic: Number(entry.selectiveLogic !== undefined ? entry.selectiveLogic : entry.selective_logic) || 0,
+                excludeRecursion: flag(entry.exclude_recursion, entry.excludeRecursion, ext.exclude_recursion),
+                preventRecursion: flag(entry.prevent_recursion, entry.preventRecursion, ext.prevent_recursion),
+                delayUntilRecursion: flag(entry.delay_until_recursion, entry.delayUntilRecursion, ext.delay_until_recursion)
             };
         };
 
@@ -16533,8 +16565,9 @@
             .map((entry, index) => ({ entry, index }))
             .filter(({ entry }) => entry && entry.enabled !== false && String(entry.content || '').trim())
             .sort((a, b) => {
-                const diff = (Number(a.entry.order) || 0) - (Number(b.entry.order) || 0);
-                return diff || (a.index - b.index);
+                const rankDiff = (LORE_POSITION_RANK[a.entry.position] || 0) - (LORE_POSITION_RANK[b.entry.position] || 0);
+                const orderDiff = (Number(a.entry.order) || 0) - (Number(b.entry.order) || 0);
+                return rankDiff || orderDiff || (a.index - b.index);
             })
             .map(({ entry }, index) => `${renderLoreEntryTitle(entry, index)}\n${entry.content}`)
             .join('\n\n');
@@ -16590,11 +16623,154 @@
                 probability: Number.isFinite(probability) ? Math.min(100, Math.max(0, probability)) : 100,
                 caseSensitive: source.caseSensitive === true,
                 matchWholeWords: source.matchWholeWords === true,
-                selective: source.selective === true || secondaryKeys.length > 0,
-                selectiveLogic: Number(source.selectiveLogic) || 0
+                selective: source.selective === undefined ? secondaryKeys.length > 0 : source.selective === true,
+                selectiveLogic: Number(source.selectiveLogic) || 0,
+                excludeRecursion: source.excludeRecursion === true,
+                preventRecursion: source.preventRecursion === true,
+                delayUntilRecursion: source.delayUntilRecursion === true
             };
         };
+
+        // ---- SillyTavern 式激活：关键词 / 次关键词 / 常驻 / 概率 / 递归 ----
+        const LORE_SELECTIVE_LOGIC = { AND_ANY: 0, NOT_ALL: 1, NOT_ANY: 2, AND_ALL: 3 };
+
+        const escapeLoreKeyPattern = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        // ST 的 key 支持 /pattern/flags；中文没有空格，整词匹配用 Unicode 字母/数字边界近似
+        const compileLoreKeyPattern = (key, entry) => {
+            const raw = String(key === undefined || key === null ? '' : key).trim();
+            if (!raw) return null;
+            const caseSensitive = entry && entry.caseSensitive === true;
+            const regexForm = raw.match(/^\/(.+)\/([a-z]*)$/i);
+            if (regexForm) {
+                const flags = regexForm[2].replace(/[gy]/g, '') + (caseSensitive ? '' : 'i');
+                try { return new RegExp(regexForm[1], flags); } catch (error) { return null; }
+            }
+            let source = escapeLoreKeyPattern(raw);
+            if (entry && entry.matchWholeWords === true) {
+                source = `(?:^|[^\\p{L}\\p{N}_])${source}(?=$|[^\\p{L}\\p{N}_])`;
+            }
+            try { return new RegExp(source, caseSensitive ? 'u' : 'iu'); }
+            catch (error) { return new RegExp(source, caseSensitive ? '' : 'i'); }
+        };
+
+        const loreKeyMatches = (text, key, entry) => {
+            const pattern = compileLoreKeyPattern(key, entry);
+            return pattern ? pattern.test(String(text === undefined || text === null ? '' : text)) : false;
+        };
+
+        // 一条条目在给定扫描文本里是否命中（不含概率判定）
+        const loreEntryMatches = (entry, scanText) => {
+            if (!entry || entry.enabled === false) return false;
+            const primary = Array.isArray(entry.keys) ? entry.keys : [];
+            const secondary = Array.isArray(entry.secondaryKeys) ? entry.secondaryKeys : [];
+            // 没有关键词的条目只能靠「常驻」生效，和 ST 一致
+            if (!primary.length) return entry.constant === true;
+            if (!primary.some(key => loreKeyMatches(scanText, key, entry))) return false;
+            if (entry.selective !== true || !secondary.length) return true;
+            const hits = secondary.filter(key => loreKeyMatches(scanText, key, entry)).length;
+            switch (Number(entry.selectiveLogic) || 0) {
+                case LORE_SELECTIVE_LOGIC.NOT_ALL: return hits < secondary.length;
+                case LORE_SELECTIVE_LOGIC.NOT_ANY: return hits === 0;
+                case LORE_SELECTIVE_LOGIC.AND_ALL: return hits === secondary.length;
+                default: return hits > 0; // AND_ANY：主关键词 + 任意次关键词
+            }
+        };
+
+        // 按 ST 规则激活：常驻直接生效，其余看关键词；已激活条目的正文还能再触发别的条目（递归）
+        const activateLoreEntries = (entries, scanText, options = {}) => {
+            const list = (Array.isArray(entries) ? entries : []).filter(entry => entry && entry.enabled !== false);
+            const random = typeof options.random === 'function' ? options.random : Math.random;
+            const recursionLimit = Number.isFinite(Number(options.recursionLimit)) ? Number(options.recursionLimit) : 2;
+            const records = list.map((entry, index) => ({ entry, key: String(entry.id || `le_index_${index}`), index }));
+            const pending = new Map(records.map(record => [record.key, record]));
+            const activated = [];
+            const passesProbability = entry => {
+                const probability = Number(entry.probability);
+                if (!Number.isFinite(probability) || probability >= 100) return true;
+                if (probability <= 0) return false;
+                return random() * 100 < probability;
+            };
+            const runRound = (buffer, round) => {
+                let changed = false;
+                Array.from(pending.keys()).forEach(key => {
+                    const record = pending.get(key);
+                    const entry = record.entry;
+                    // 「仅递归时激活」第一轮不参与；「不可被递归激活」后续轮不参与
+                    if (round === 0 && entry.delayUntilRecursion === true) return;
+                    if (round > 0 && entry.excludeRecursion === true) return;
+                    if (!loreEntryMatches(entry, buffer)) return;
+                    if (!passesProbability(entry)) return;
+                    pending.delete(key);
+                    activated.push(record);
+                    changed = true;
+                });
+                return changed;
+            };
+
+            const baseText = String(scanText === undefined || scanText === null ? '' : scanText);
+            runRound(baseText, 0);
+            let scanBuffer = baseText;
+            for (let round = 1; round <= recursionLimit; round += 1) {
+                const extraText = activated
+                    .filter(record => record.entry.preventRecursion !== true)
+                    .map(record => String(record.entry.content || ''))
+                    .join('\n');
+                if (!extraText.trim()) break;
+                const nextBuffer = `${scanBuffer}\n${extraText}`;
+                if (nextBuffer === scanBuffer) break;
+                scanBuffer = nextBuffer;
+                if (!runRound(scanBuffer, round)) break;
+            }
+
+            // 最终注入顺序：位置区段 → order（小号在前）→ 原始条目顺序
+            return activated
+                .sort((a, b) => {
+                    const rankDiff = (LORE_POSITION_RANK[a.entry.position] || 0) - (LORE_POSITION_RANK[b.entry.position] || 0);
+                    const orderDiff = (Number(a.entry.order) || 0) - (Number(b.entry.order) || 0);
+                    return rankDiff || orderDiff || (a.index - b.index);
+                })
+                .map(record => record.entry);
+        };
         // ==WORLDBOOK_PURE_END==
+
+        // 世界书关键词扫描：ST 默认扫最近几条聊天消息（Scan Depth）
+        const WORLDBOOK_SCAN_DEPTH = 4;
+
+        const worldBookMessageText = message => {
+            if (!message || message.role === 'system') return '';
+            const content = message.content;
+            if (content === undefined || content === null) return '';
+            if (typeof content === 'object') {
+                // 订单卡/图片卡这类结构化消息只取可读文本，避免把 JSON 当关键词文本
+                return String(content.text || content.caption || content.name || '').trim();
+            }
+            return String(content).trim();
+        };
+
+        const getWorldBookScanText = () => {
+            if (!activeChatContext || !activeChatContext.id) return '';
+            const chat = activeChatContext.type === 'group'
+                ? state.groupChats.find(group => group.id === activeChatContext.id)
+                : state.characters.find(character => character.id === activeChatContext.id);
+            const history = chat && Array.isArray(chat.chatHistory) ? chat.chatHistory : [];
+            return history.slice(-WORLDBOOK_SCAN_DEPTH)
+                .map(worldBookMessageText)
+                .filter(Boolean)
+                .join('\n');
+        };
+
+        // 注入用文本：有聊天上下文时按 ST 规则激活（关键词/次关键词/常驻/顺序/概率/递归）；
+        // 论坛、问卷、报纸这类离线生成没有聊天可扫，就退回整本注入，别让世界书凭空消失。
+        const buildWorldBookInjectionText = book => {
+            if (!book || typeof book !== 'object') return '';
+            // 一律走 parseLoreEntries：导入后的原始条目（disable/key/keysecondary）也能正确规范化
+            const entries = parseLoreEntries(book);
+            if (!entries.length) return String(book.content || '');
+            const scanText = getWorldBookScanText();
+            if (!scanText.trim()) return renderLoreEntriesContent(entries);
+            return renderLoreEntriesContent(activateLoreEntries(entries, scanText));
+        };
 
         // 兼容 SillyTavern v1（扁平）/ v2 / v3（data 包裹）三种格式
         const normalizeSillyTavernCard = payload => {
@@ -16854,6 +17030,9 @@
             if (books.length) {
                 lines.push(`已导入 ${books.length} 本世界书：\n` + books.map(item => `· ${item.book.name}${entryCountText(item.book)}`).join('\n'));
             }
+            if (characters.length || books.length) {
+                lines.push('提示：条目按 SillyTavern 规则生效——勾了「常驻」的始终注入，其余条目录最近 4 条对话命中关键词后才注入（次关键词、顺序、概率都能在条目编辑器里调）。');
+            }
             if (errors.length) {
                 lines.push(`以下文件导入失败：\n` + errors.join('\n'));
             }
@@ -16959,10 +17138,18 @@
                     <button type="button" class="wb-entry-delete" data-action="delete" title="删除这条条目"><i class="fas fa-trash-alt"></i></button>
                 </div>
                 <div class="wb-entry-body">
-                    <label>触发关键词 <span class="wb-hint">（逗号分隔，留空则只随整本注入）</span></label>
+                    <label>触发关键词 <span class="wb-hint">（逗号分隔；留空时必须勾选「常驻」才会注入，和 SillyTavern 一致）</span></label>
                     <input type="text" class="wb-entry-keys" placeholder="例如：魔法, 魔力, mana">
-                    <label>次关键词 <span class="wb-hint">（可选，需与主关键词一起命中）</span></label>
-                    <input type="text" class="wb-entry-secondary-keys" placeholder="留空即可">
+                    <label>次关键词 <span class="wb-hint">（可选，按下面的逻辑与主关键词配合）</span></label>
+                    <div class="wb-entry-row">
+                        <input type="text" class="wb-entry-secondary-keys" placeholder="留空即可">
+                        <select class="wb-entry-secondary-logic" title="SillyTavern 的 selectiveLogic：次关键词如何与主关键词配合">
+                            <option value="0">主词 + 任一次词</option>
+                            <option value="1">主词 + 非全部次词</option>
+                            <option value="2">主词 + 无次词</option>
+                            <option value="3">主词 + 全部次词</option>
+                        </select>
+                    </div>
                     <label>条目内容</label>
                     <textarea class="wb-entry-content" rows="5" placeholder="可使用 {{char}} 和 {{user}} 占位符"></textarea>
                     <div class="wb-entry-row">
@@ -16976,6 +17163,7 @@
             wrap.querySelector('.wb-entry-comment').value = entry.comment || '';
             wrap.querySelector('.wb-entry-keys').value = (entry.keys || []).join(', ');
             wrap.querySelector('.wb-entry-secondary-keys').value = (entry.secondaryKeys || []).join(', ');
+            wrap.querySelector('.wb-entry-secondary-logic').value = String(Number(entry.selectiveLogic) || 0);
             wrap.querySelector('.wb-entry-content').value = entry.content || '';
             wrap.querySelector('.wb-entry-constant').checked = entry.constant === true;
             wrap.querySelector('.wb-entry-order').value = String(Number.isFinite(Number(entry.order)) ? Number(entry.order) : 100);
@@ -16988,10 +17176,16 @@
                 const depthValue = Number.isFinite(Number(entry.depth)) ? Number(entry.depth) : 4;
                 const probabilityValue = Number.isFinite(Number(entry.probability)) ? Number(entry.probability) : 100;
                 const orderValue = wrap.querySelector('.wb-entry-order').value || '100';
-                metaNode.textContent = `插入位置：${positionLabel} · 深度 ${depthValue} · 概率 ${probabilityValue}% · 顺序 ${orderValue}（越小越靠前）`;
+                const keysNow = parseLoreKeyList(wrap.querySelector('.wb-entry-keys').value);
+                const constantNow = wrap.querySelector('.wb-entry-constant').checked;
+                const triggerMode = constantNow ? '常驻'
+                    : (keysNow.length ? '关键词触发' : '不会注入（无关键词且非常驻）');
+                metaNode.textContent = `${triggerMode} · 插入位置：${positionLabel} · 深度 ${depthValue} · 概率 ${probabilityValue}% · 顺序 ${orderValue}（越小越靠前）`;
             };
             syncEntryMeta();
             wrap.querySelector('.wb-entry-order').addEventListener('input', syncEntryMeta);
+            wrap.querySelector('.wb-entry-keys').addEventListener('input', syncEntryMeta);
+            wrap.querySelector('.wb-entry-constant').addEventListener('change', syncEntryMeta);
             return wrap;
         };
 
@@ -17061,6 +17255,9 @@
                     ? `${entry.keys.length} 个关键词` : '无关键词';
             } else if (target.classList.contains('wb-entry-secondary-keys')) {
                 entry.secondaryKeys = parseLoreKeyList(target.value);
+                entry.selective = entry.secondaryKeys.length > 0;
+            } else if (target.classList.contains('wb-entry-secondary-logic')) {
+                entry.selectiveLogic = Number(target.value) || 0;
             } else if (target.classList.contains('wb-entry-content')) {
                 entry.content = target.value;
             } else if (target.classList.contains('wb-entry-constant')) {
@@ -19993,7 +20190,7 @@ ${(state.ui.listenTogetherPlaylist && state.ui.listenTogetherPlaylist.length > 0
                     if (chatObject.worldBookIds && chatObject.worldBookIds.length > 0) {
                         worldBookContent = chatObject.worldBookIds.map(wbId => {
                             const book = state.worldBooks.find(b => b.id === wbId);
-                            return book ? `<book name="${book.name}">\n${processPlaceholders(book.content, '{{char}}', persona.name)}\n</book>` : '';
+                            return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book), '{{char}}', persona.name)}\n</book>` : '';
                         }).filter(Boolean).join('\n');
                     }
 
@@ -20211,7 +20408,7 @@ ${serializedHistory}
                     if (chatObject.worldBookIds && chatObject.worldBookIds.length > 0) {
                         worldBookContent = chatObject.worldBookIds.map(wbId => {
                             const book = state.worldBooks.find(b => b.id === wbId);
-                            return book ? `<book name="${book.name}">\n${processPlaceholders(book.content, chatObject.name, persona.name)}\n</book>` : '';
+                            return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book), chatObject.name, persona.name)}\n</book>` : '';
                         }).filter(Boolean).join('\n');
                     }
 
@@ -20803,7 +21000,7 @@ ${(chatObject.characterState?.anniversaries || []).map(a => `- ${a.date}: ${a.ev
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<设定书 name="${book.name}">\n${processPlaceholders(book.content)}\n</设定书>` : '';
+                        return book ? `<设定书 name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</设定书>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -21057,7 +21254,7 @@ ${serializedHistory}
 
                     const worldBookContent = (group.worldBookIds || []).map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<世界观设定: ${book.name}>\n${processPlaceholders(book.content, '{{char}}')}\n</世界观设定>` : '';
+                        return book ? `<世界观设定: ${book.name}>\n${processPlaceholders(buildWorldBookInjectionText(book), '{{char}}')}\n</世界观设定>` : '';
                     }).filter(Boolean).join('\n');
 
                     // ========================= ▼▼▼ 新增代码块 ▼▼▼ =========================
@@ -21145,7 +21342,7 @@ ${serializedHistory}
                     const processPlaceholders = (text) => text.replaceAll('{{char}}', character.name).replaceAll('{{user}}', persona.name);
                     const worldBookContent = (character.worldBookIds || []).map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n');
                     const onlineEvents = (character.chatHistory || []).map(msg => ({ type: 'online_chat', timestamp: msg.timestamp, data: msg }));
                     const pastOfflineEvents = (character.offlineChatHistory || []).map(session => session.id !== activeOfflineSessionRef.id ? ({ type: 'offline_session', timestamp: session.timestamp, data: session }) : null).filter(Boolean);
@@ -21445,7 +21642,7 @@ ${autoSummaryMemoryContext}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n');
                 }
                 const onlineEvents = (character.chatHistory || []).map(msg => ({
@@ -25332,7 +25529,7 @@ ${commonContext}`;
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n');
                 }
 
@@ -26015,7 +26212,7 @@ TA的人设是: ${processedUserPersona}
             if (character.worldBookIds && character.worldBookIds.length > 0) {
                 worldBookContent = character.worldBookIds.map(wbId => {
                     const book = state.worldBooks.find(b => b.id === wbId);
-                    return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                    return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                 }).filter(Boolean).join('\n\n');
             }
 
@@ -26813,7 +27010,7 @@ const renderEssayListPage = () => {
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -26962,7 +27159,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -27270,7 +27467,7 @@ const renderChatAppDetailPage = () => {
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -27572,7 +27769,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -27812,7 +28009,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -28089,7 +28286,7 @@ ${serializedHistory || 'No recent chat history.'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -28249,7 +28446,7 @@ ${serializedHistory || '暂无聊天记录。'}
             if (character.worldBookIds && character.worldBookIds.length > 0) {
                 worldBookContent = character.worldBookIds.map(wbId => {
                     const book = state.worldBooks.find(b => b.id === wbId);
-                    return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                    return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                 }).filter(Boolean).join('\n\n');
             }
 
@@ -31260,7 +31457,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldbookIds && character.worldbookIds.length > 0) {
                     worldbooksContext = character.worldbookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book name="${book.name}">\n${book.content}\n</world_book>` : '';
+                        return book ? `<world_book name="${book.name}">\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
                     }).join('\n\n');
                 }
 
@@ -31533,7 +31730,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldbooksContext = character.worldBookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book>\n${book.content}\n</world_book>` : '';
+                        return book ? `<world_book>\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
                     }).join('\n\n');
                 }
 
@@ -32720,7 +32917,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldbooksContext = character.worldBookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book name="${book.name}">\n${book.content}\n</world_book>` : '';
+                        return book ? `<world_book name="${book.name}">\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
                     }).join('\n\n');
                 }
 
@@ -33690,7 +33887,7 @@ ${historyForPrompt}
                             if (chatObject.worldBookIds && chatObject.worldBookIds.length > 0) {
                                 worldbooksContext = chatObject.worldBookIds.map(id => {
                                     const book = state.worldBooks.find(b => b.id === id);
-                                    return book ? `[设定集:${book.name}] ${book.content}` : '';
+                                    return book ? `[设定集:${book.name}] ${buildWorldBookInjectionText(book)}` : '';
                                 }).filter(Boolean).join('\n\n');
                             }
 
@@ -33884,7 +34081,7 @@ ${historyForPrompt}
                     Persona: ${char.prompt}
                 </character_persona>
             `).join('\n');
-            let worldbooksContext = currentReplyOptions.selectedWorldbooks.map(id => state.worldBooks.find(b => b.id === id)?.content || '').join('\n');
+            let worldbooksContext = currentReplyOptions.selectedWorldbooks.map(id => buildWorldBookInjectionText(state.worldBooks.find(b => b.id === id))).join('\n');
 
             const fullThreadContext = post.comments
                 .filter(c => c.id !== tempAiReplyId)
@@ -34081,7 +34278,7 @@ ${historyForPrompt}
             if (char.worldBookIds && char.worldBookIds.length > 0) {
                 worldBookContent = char.worldBookIds.map(wbId => {
                     const book = state.worldBooks.find(b => b.id === wbId);
-                    return book ? `<世界观设定: ${book.name}>\n${processPlaceholders(book.content)}\n</世界观设定>` : '';
+                    return book ? `<世界观设定: ${book.name}>\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</世界观设定>` : '';
                 }).join('\n');
             }
 
@@ -34572,7 +34769,7 @@ ${historyForPrompt}
             if (allWorldBookIds.size > 0) {
                 context = Array.from(allWorldBookIds).map(id => {
                     const book = state.worldBooks.find(b => b.id === id);
-                    return book ? `[设定集:${book.name}] ${book.content}` : '';
+                    return book ? `[设定集:${book.name}] ${buildWorldBookInjectionText(book)}` : '';
                 }).filter(Boolean).join('\n\n'); // 使用换行符分隔不同的设定集
             }
 
@@ -34755,7 +34952,7 @@ ${historyForPrompt}
                 if (debateWorldBookIds.size > 0) {
                     debateWorldbooksContext = Array.from(debateWorldBookIds).map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `[设定集:${book.name}] ${book.content}` : '';
+                        return book ? `[设定集:${book.name}] ${buildWorldBookInjectionText(book)}` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -36508,7 +36705,7 @@ ${historyForPrompt}
                 if (worldbookIds.length > 0) {
                     worldbooksContext = worldbookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book name="${book.name}">\n${book.content}\n</world_book>` : '';
+                        return book ? `<world_book name="${book.name}">\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
                     }).join('\n\n');
                 }
                 const systemPrompt = `你是一个不是AI，你是一个充满活力的社交媒体论坛（如微博、贴吧、小红书、豆瓣）的内容生成器。
@@ -36627,7 +36824,7 @@ ${historyForPrompt}
                 if (worldbookIds.length > 0) {
                     worldbooksContext = worldbookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book name="${book.name}">\n${book.content}\n</world_book>` : '';
+                        return book ? `<world_book name="${book.name}">\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
                     }).join('\n\n');
                 }
 
@@ -39238,7 +39435,7 @@ ${historyForPrompt}
             if (questionnaireSettings.worldbookIds.length > 0) {
                 worldbookContext = questionnaireSettings.worldbookIds.map(id => {
                     const book = state.worldBooks.find(b => b.id === id);
-                    return book ? `<世界设定: ${book.name}>\n${book.content}\n</世界设定>` : '';
+                    return book ? `<世界设定: ${book.name}>\n${buildWorldBookInjectionText(book)}\n</世界设定>` : '';
                 }).join('\n');
             }
 
@@ -39688,7 +39885,7 @@ ${historyForPrompt}
                 if (settings.worldbookIds.length > 0) {
                     worldbookContext = settings.worldbookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<世界设定: ${book.name}>\n${book.content}\n</世界设定>` : '';
+                        return book ? `<世界设定: ${book.name}>\n${buildWorldBookInjectionText(book)}\n</世界设定>` : '';
                     }).join('\n');
                 }
 
@@ -40054,7 +40251,7 @@ ${historyForPrompt}
                 worldbookContext = settings.worldbookIds.map(id => {
                     const book = state.worldBooks.find(b => b.id === id);
                     // 使用 processPlaceholders 函数确保世界书中的占位符也被替换
-                    return book ? `<世界设定: ${book.name}>\n${processPlaceholders(book.content)}\n</世界设定>` : '';
+                    return book ? `<世界设定: ${book.name}>\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</世界设定>` : '';
                 }).join('\n');
             }
             try {
@@ -42396,7 +42593,7 @@ ${historyForPrompt}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -42625,7 +42822,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(book.content)}\n</book>` : '';
+                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -43263,7 +43460,7 @@ ${serializedHistory || '最近没有聊天记录。'}
             const processPlaceholders = (text, charName) => text ? text.replaceAll('{{char}}', charName).replaceAll('{{user}}', persona.name) : '';
             let worldBookContent = (chatObject.worldBookIds || []).map(wbId => {
                 const book = state.worldBooks.find(b => b.id === wbId);
-                return book ? `<设定>\n${processPlaceholders(book.content)}\n</设定>` : '';
+                return book ? `<设定>\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</设定>` : '';
             }).join('\n');
             
             const memoryDepth = chatObject.memoryDepth > 0 ? chatObject.memoryDepth : 20;
@@ -43836,7 +44033,7 @@ ${ptHistory}`;
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<世界设定 name="${book.name}">\n${processPlaceholders(book.content)}\n</世界设定>` : '';
+                        return book ? `<世界设定 name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</世界设定>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -44146,7 +44343,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `[地名/地理世界观参考: ${book.name}]\n${processPlaceholders(book.content)}` : '';
+                        return book ? `[地名/地理世界观参考: ${book.name}]\n${processPlaceholders(buildWorldBookInjectionText(book))}` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
