@@ -20190,7 +20190,7 @@ ${(state.ui.listenTogetherPlaylist && state.ui.listenTogetherPlaylist.length > 0
                     if (chatObject.worldBookIds && chatObject.worldBookIds.length > 0) {
                         worldBookContent = chatObject.worldBookIds.map(wbId => {
                             const book = state.worldBooks.find(b => b.id === wbId);
-                            return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book), '{{char}}', persona.name)}\n</book>` : '';
+                            const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText, '{{char}}', persona.name)}\n</book>` : '';
                         }).filter(Boolean).join('\n');
                     }
 
@@ -20408,7 +20408,7 @@ ${serializedHistory}
                     if (chatObject.worldBookIds && chatObject.worldBookIds.length > 0) {
                         worldBookContent = chatObject.worldBookIds.map(wbId => {
                             const book = state.worldBooks.find(b => b.id === wbId);
-                            return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book), chatObject.name, persona.name)}\n</book>` : '';
+                            const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText, chatObject.name, persona.name)}\n</book>` : '';
                         }).filter(Boolean).join('\n');
                     }
 
@@ -21000,7 +21000,7 @@ ${(chatObject.characterState?.anniversaries || []).map(a => `- ${a.date}: ${a.ev
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<设定书 name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</设定书>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<设定书 name="${book.name}">\n${processPlaceholders(wbText)}\n</设定书>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -21254,7 +21254,7 @@ ${serializedHistory}
 
                     const worldBookContent = (group.worldBookIds || []).map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<世界观设定: ${book.name}>\n${processPlaceholders(buildWorldBookInjectionText(book), '{{char}}')}\n</世界观设定>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<世界观设定: ${book.name}>\n${processPlaceholders(wbText, '{{char}}')}\n</世界观设定>` : '';
                     }).filter(Boolean).join('\n');
 
                     // ========================= ▼▼▼ 新增代码块 ▼▼▼ =========================
@@ -21342,7 +21342,7 @@ ${serializedHistory}
                     const processPlaceholders = (text) => text.replaceAll('{{char}}', character.name).replaceAll('{{user}}', persona.name);
                     const worldBookContent = (character.worldBookIds || []).map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n');
                     const onlineEvents = (character.chatHistory || []).map(msg => ({ type: 'online_chat', timestamp: msg.timestamp, data: msg }));
                     const pastOfflineEvents = (character.offlineChatHistory || []).map(session => session.id !== activeOfflineSessionRef.id ? ({ type: 'offline_session', timestamp: session.timestamp, data: session }) : null).filter(Boolean);
@@ -21642,7 +21642,7 @@ ${autoSummaryMemoryContext}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n');
                 }
                 const onlineEvents = (character.chatHistory || []).map(msg => ({
@@ -25529,7 +25529,7 @@ ${commonContext}`;
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n');
                 }
 
@@ -26212,7 +26212,7 @@ TA的人设是: ${processedUserPersona}
             if (character.worldBookIds && character.worldBookIds.length > 0) {
                 worldBookContent = character.worldBookIds.map(wbId => {
                     const book = state.worldBooks.find(b => b.id === wbId);
-                    return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                    const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                 }).filter(Boolean).join('\n\n');
             }
 
@@ -27010,7 +27010,7 @@ const renderEssayListPage = () => {
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -27159,7 +27159,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -27467,7 +27467,7 @@ const renderChatAppDetailPage = () => {
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -27769,7 +27769,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -28009,7 +28009,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -28286,7 +28286,7 @@ ${serializedHistory || 'No recent chat history.'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -28446,7 +28446,7 @@ ${serializedHistory || '暂无聊天记录。'}
             if (character.worldBookIds && character.worldBookIds.length > 0) {
                 worldBookContent = character.worldBookIds.map(wbId => {
                     const book = state.worldBooks.find(b => b.id === wbId);
-                    return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                    const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                 }).filter(Boolean).join('\n\n');
             }
 
@@ -31457,8 +31457,8 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldbookIds && character.worldbookIds.length > 0) {
                     worldbooksContext = character.worldbookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book name="${book.name}">\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
-                    }).join('\n\n');
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<world_book name="${book.name}">\n${wbText}\n</world_book>` : '';
+                    }).filter(Boolean).join('\n\n');
                 }
 
                 const systemPrompt = `你正在扮演角色'${character.name}'。你的任务是根据他们的设定、最近的聊天剧情以及世界观设定，生成他们在TikTok（或类似短视频社交平台）上的完整主页数据。
@@ -31730,8 +31730,8 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldbooksContext = character.worldBookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book>\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
-                    }).join('\n\n');
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<world_book>\n${wbText}\n</world_book>` : '';
+                    }).filter(Boolean).join('\n\n');
                 }
 
                 const systemPrompt = `你是一个TikTok（短视频平台）评论区生成模拟器。
@@ -32917,8 +32917,8 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldbooksContext = character.worldBookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book name="${book.name}">\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
-                    }).join('\n\n');
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<world_book name="${book.name}">\n${wbText}\n</world_book>` : '';
+                    }).filter(Boolean).join('\n\n');
                 }
 
                 let tkProfileContext = '暂无主页信息';
@@ -33887,7 +33887,7 @@ ${historyForPrompt}
                             if (chatObject.worldBookIds && chatObject.worldBookIds.length > 0) {
                                 worldbooksContext = chatObject.worldBookIds.map(id => {
                                     const book = state.worldBooks.find(b => b.id === id);
-                                    return book ? `[设定集:${book.name}] ${buildWorldBookInjectionText(book)}` : '';
+                                    const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `[设定集:${book.name}] ${wbText}` : '';
                                 }).filter(Boolean).join('\n\n');
                             }
 
@@ -34081,7 +34081,10 @@ ${historyForPrompt}
                     Persona: ${char.prompt}
                 </character_persona>
             `).join('\n');
-            let worldbooksContext = currentReplyOptions.selectedWorldbooks.map(id => buildWorldBookInjectionText(state.worldBooks.find(b => b.id === id))).join('\n');
+            let worldbooksContext = currentReplyOptions.selectedWorldbooks
+                .map(id => buildWorldBookInjectionText(state.worldBooks.find(b => b.id === id)))
+                .filter(Boolean)
+                .join('\n');
 
             const fullThreadContext = post.comments
                 .filter(c => c.id !== tempAiReplyId)
@@ -34278,8 +34281,8 @@ ${historyForPrompt}
             if (char.worldBookIds && char.worldBookIds.length > 0) {
                 worldBookContent = char.worldBookIds.map(wbId => {
                     const book = state.worldBooks.find(b => b.id === wbId);
-                    return book ? `<世界观设定: ${book.name}>\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</世界观设定>` : '';
-                }).join('\n');
+                    const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<世界观设定: ${book.name}>\n${processPlaceholders(wbText)}\n</世界观设定>` : '';
+                }).filter(Boolean).join('\n');
             }
 
             // 3. 获取并合并历史记录 (线上+线下+视频)
@@ -34769,7 +34772,7 @@ ${historyForPrompt}
             if (allWorldBookIds.size > 0) {
                 context = Array.from(allWorldBookIds).map(id => {
                     const book = state.worldBooks.find(b => b.id === id);
-                    return book ? `[设定集:${book.name}] ${buildWorldBookInjectionText(book)}` : '';
+                    const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `[设定集:${book.name}] ${wbText}` : '';
                 }).filter(Boolean).join('\n\n'); // 使用换行符分隔不同的设定集
             }
 
@@ -34952,7 +34955,7 @@ ${historyForPrompt}
                 if (debateWorldBookIds.size > 0) {
                     debateWorldbooksContext = Array.from(debateWorldBookIds).map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `[设定集:${book.name}] ${buildWorldBookInjectionText(book)}` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `[设定集:${book.name}] ${wbText}` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -36705,8 +36708,8 @@ ${historyForPrompt}
                 if (worldbookIds.length > 0) {
                     worldbooksContext = worldbookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book name="${book.name}">\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
-                    }).join('\n\n');
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<world_book name="${book.name}">\n${wbText}\n</world_book>` : '';
+                    }).filter(Boolean).join('\n\n');
                 }
                 const systemPrompt = `你是一个不是AI，你是一个充满活力的社交媒体论坛（如微博、贴吧、小红书、豆瓣）的内容生成器。
                 你的任务是根据提供的角色人设、世界观和主题，展现出一个包含“推荐帖子”和“关注帖子”的结构化JSON数据。
@@ -36824,8 +36827,8 @@ ${historyForPrompt}
                 if (worldbookIds.length > 0) {
                     worldbooksContext = worldbookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<world_book name="${book.name}">\n${buildWorldBookInjectionText(book)}\n</world_book>` : '';
-                    }).join('\n\n');
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<world_book name="${book.name}">\n${wbText}\n</world_book>` : '';
+                    }).filter(Boolean).join('\n\n');
                 }
 
                 // =============== ▼▼▼ 核心修改区域 2：更新 System Prompt ▼▼▼ ===============
@@ -39435,8 +39438,8 @@ ${historyForPrompt}
             if (questionnaireSettings.worldbookIds.length > 0) {
                 worldbookContext = questionnaireSettings.worldbookIds.map(id => {
                     const book = state.worldBooks.find(b => b.id === id);
-                    return book ? `<世界设定: ${book.name}>\n${buildWorldBookInjectionText(book)}\n</世界设定>` : '';
-                }).join('\n');
+                    const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<世界设定: ${book.name}>\n${wbText}\n</世界设定>` : '';
+                }).filter(Boolean).join('\n');
             }
 
             const questionnaireText = questionnaireData.questions.map(q => {
@@ -39885,8 +39888,8 @@ ${historyForPrompt}
                 if (settings.worldbookIds.length > 0) {
                     worldbookContext = settings.worldbookIds.map(id => {
                         const book = state.worldBooks.find(b => b.id === id);
-                        return book ? `<世界设定: ${book.name}>\n${buildWorldBookInjectionText(book)}\n</世界设定>` : '';
-                    }).join('\n');
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<世界设定: ${book.name}>\n${wbText}\n</世界设定>` : '';
+                    }).filter(Boolean).join('\n');
                 }
 
                 let systemPrompt = '';
@@ -40251,8 +40254,8 @@ ${historyForPrompt}
                 worldbookContext = settings.worldbookIds.map(id => {
                     const book = state.worldBooks.find(b => b.id === id);
                     // 使用 processPlaceholders 函数确保世界书中的占位符也被替换
-                    return book ? `<世界设定: ${book.name}>\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</世界设定>` : '';
-                }).join('\n');
+                    const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<世界设定: ${book.name}>\n${processPlaceholders(wbText)}\n</世界设定>` : '';
+                }).filter(Boolean).join('\n');
             }
             try {
                 // ▼▼▼ 从系统的 state 中读取你在弹窗里设置的数值，默认 10 ▼▼▼
@@ -42593,7 +42596,7 @@ ${historyForPrompt}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -42822,7 +42825,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<book name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</book>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<book name="${book.name}">\n${processPlaceholders(wbText)}\n</book>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -43460,8 +43463,8 @@ ${serializedHistory || '最近没有聊天记录。'}
             const processPlaceholders = (text, charName) => text ? text.replaceAll('{{char}}', charName).replaceAll('{{user}}', persona.name) : '';
             let worldBookContent = (chatObject.worldBookIds || []).map(wbId => {
                 const book = state.worldBooks.find(b => b.id === wbId);
-                return book ? `<设定>\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</设定>` : '';
-            }).join('\n');
+                const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<设定>\n${processPlaceholders(wbText)}\n</设定>` : '';
+            }).filter(Boolean).join('\n');
             
             const memoryDepth = chatObject.memoryDepth > 0 ? chatObject.memoryDepth : 20;
             const serializedHistory = (chatObject.chatHistory || []).slice(-memoryDepth).map(msg => {
@@ -44033,7 +44036,7 @@ ${ptHistory}`;
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `<世界设定 name="${book.name}">\n${processPlaceholders(buildWorldBookInjectionText(book))}\n</世界设定>` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `<世界设定 name="${book.name}">\n${processPlaceholders(wbText)}\n</世界设定>` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
@@ -44343,7 +44346,7 @@ ${serializedHistory || '最近没有聊天记录。'}
                 if (character.worldBookIds && character.worldBookIds.length > 0) {
                     worldBookContent = character.worldBookIds.map(wbId => {
                         const book = state.worldBooks.find(b => b.id === wbId);
-                        return book ? `[地名/地理世界观参考: ${book.name}]\n${processPlaceholders(buildWorldBookInjectionText(book))}` : '';
+                        const wbText = book ? buildWorldBookInjectionText(book) : ''; return (book && wbText.trim()) ? `[地名/地理世界观参考: ${book.name}]\n${processPlaceholders(wbText)}` : '';
                     }).filter(Boolean).join('\n\n');
                 }
 
